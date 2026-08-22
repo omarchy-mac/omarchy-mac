@@ -5,7 +5,7 @@
 Omarchy 4 on Apple Silicon, alongside macOS: Asahi Alarm + Omarchy, installed
 in one command, full-disk encryption included.
 
-[![License](https://img.shields.io/gitea/license/malik-na/omarchy-mac?gitea_url=https%3A%2F%2Fcodeberg.org)](LICENSE) [![Stars](https://img.shields.io/gitea/stars/malik-na/omarchy-mac?gitea_url=https%3A%2F%2Fcodeberg.org&style=social)](https://codeberg.org/malik-na/omarchy-mac/stargazers)
+[![License](https://img.shields.io/github/license/omarchy-mac/omarchy-mac)](LICENSE) [![Stars](https://img.shields.io/github/stars/omarchy-mac/omarchy-mac?style=social)](https://github.com/omarchy-mac/omarchy-mac/stargazers)
 
 Already running Omarchy 3.x? This page is the fresh install — to upgrade in
 place, see [docs/upgrade-to-quattro.md](docs/upgrade-to-quattro.md).
@@ -112,7 +112,7 @@ the minimal image ships without `git` or `sudo`, so as root first:
 `pacman -S --needed sudo git` — installing Omarchy itself is:
 
 ```bash
-git clone https://codeberg.org/malik-na/omarchy-mac.git ~/.local/share/omarchy
+git clone https://github.com/omarchy-mac/omarchy-mac.git ~/.local/share/omarchy
 cd ~/.local/share/omarchy
 cat version    # 4.x — if this says 3.x you are on the wrong branch
 bash install.sh

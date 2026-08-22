@@ -18,7 +18,7 @@ wires that checkout into the places a packaged install would occupy.
 
 This script is self-contained so 3.x users can run it directly:
 
-  curl -fsSL https://codeberg.org/malik-na/omarchy-mac/raw/branch/main/bin/omarchy-upgrade-to-quattro-mac | bash
+  curl -fsSL https://raw.githubusercontent.com/omarchy-mac/omarchy-mac/quattro/bin/omarchy-upgrade-to-quattro-mac | bash
 
 Options:
   -y, --yes      Do not prompt before upgrading

@@ -364,7 +364,7 @@ make_checkout() {
 
 co=$work/checkout
 
-make_checkout "$co" https://codeberg.org/scottjones/omarchy-mac.git feat/btrfs-encrypt-only tools
+make_checkout "$co" https://github.com/scottjones/omarchy-mac.git feat/btrfs-encrypt-only tools
 check "the right repo, branch and tools is reused" \
   checkout_matches "$co" scottjones/omarchy-mac feat/btrfs-encrypt-only
 
@@ -374,7 +374,7 @@ check "a different repo is replaced" \
   not checkout_matches "$co" malik-na/omarchy-mac feat/btrfs-encrypt-only
 
 # The case that actually happened: a 3.x tree from the refused run.
-make_checkout "$co" https://codeberg.org/malik-na/omarchy-mac.git main bare
+make_checkout "$co" https://github.com/omarchy-mac/omarchy-mac.git main bare
 check "the right branch without the tools is replaced" \
   not checkout_matches "$co" malik-na/omarchy-mac main
 

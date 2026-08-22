@@ -41,7 +41,7 @@ onto the EFI partition, mounts the partition there instead of at `/boot/efi`,
 reinstalls GRUB with its prefix on that partition, and rebuilds the initramfs.
 
 ```bash
-curl -LO https://codeberg.org/malik-na/omarchy-mac/raw/branch/quattro/bin/omarchy-system-boot-to-esp
+curl -LO https://raw.githubusercontent.com/omarchy-mac/omarchy-mac/quattro/bin/omarchy-system-boot-to-esp
 sudo bash omarchy-system-boot-to-esp
 # reboot, confirm the machine still comes up, then encrypt
 ```
@@ -79,7 +79,7 @@ produces (`@fresh` in particular) is only meaningful on a fresh install.
 As root on the fresh install:
 
 ```bash
-curl -LO https://codeberg.org/malik-na/omarchy-mac/raw/branch/quattro/bin/omarchy-system-btrfs-migrate
+curl -LO https://raw.githubusercontent.com/omarchy-mac/omarchy-mac/quattro/bin/omarchy-system-btrfs-migrate
 bash omarchy-system-btrfs-migrate --encrypt   # omit --encrypt to stay unencrypted
 ```
 

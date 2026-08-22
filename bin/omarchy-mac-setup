@@ -41,14 +41,14 @@ LOG=/var/log/omarchy-mac-setup.log
 # branch that actually carries this script and the two tools it drives --
 # quattro, the repo's default branch. The check below still refuses to install
 # Omarchy 3 unasked when an older ref is passed explicitly.
-DEFAULT_REPO=malik-na/omarchy-mac
+DEFAULT_REPO=omarchy-mac/omarchy-mac
 DEFAULT_REF=quattro
 # The host the repo is fetched from. Overridable because the same repo is
 # mirrored on more than one forge, and an install should not be stopped by one
 # of them being unreachable -- which has happened: codeberg.org stopped
 # completing TCP handshakes mid-install. It is also the whole change needed if
 # the project's home moves.
-DEFAULT_FORGE=codeberg.org
+DEFAULT_FORGE=github.com
 
 # Everything this script shells out to, and therefore everything the chosen
 # branch has to contain.
