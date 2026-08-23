@@ -35,11 +35,16 @@ it — but the BTRFS image already has the right shape.
 
 ### 2. Boot into Arch and get online
 
-Log in as root and connect first — everything from here starts with a download:
+Log in as root (username: `root`, password: `root`) and connect first — 
+everything from here starts with a download:
 
 ```bash
 nmtui
 ```
+
+Choose `Activate a connection` and connect to a WiFi network. Optionally 
+`Set a system hostname` or set it during install below. Choose `Quit` when done 
+to return to the prompt.
 
 If `nmtui` shows an error right after activating the connection, reboot and try
 again.

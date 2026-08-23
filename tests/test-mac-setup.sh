@@ -181,6 +181,10 @@ check "answering no stops the run" refuses_to_start 'no
 echo
 echo "=== hostnames ==="
 
+check "a regular owner username is accepted" valid_username sfreiburg
+check "root is refused as the owner" not valid_username root
+check "a username beginning with a digit is refused" not valid_username 1owner
+
 valid() {
   valid_hostname "$1"
 }
@@ -577,6 +581,88 @@ matches() {
   local pattern="$1" text="$2"
   grep -qiE -- "$pattern" <<<"$text"
 }
+
+echo
+echo "=== retiring the Asahi bootstrap administrator ==="
+
+retirement_run() {
+  local owner="$1" alarm_exists="$2" alarm_in_wheel="$3" removal_ok=${4:-1}
+  (
+    id() {
+      [[ $1 == "-u" && $2 == "alarm" && $alarm_exists == 1 ]]
+    }
+    user_in_group() {
+      [[ $1 == "alarm" && $2 == "wheel" && $alarm_in_wheel == 1 ]]
+    }
+    gpasswd() {
+      printf 'GPASSWD: %s\n' "$*" >&2
+      [[ $removal_ok == 1 ]]
+    }
+    log() { :; }
+    retire_asahi_admin "$owner"
+  )
+}
+
+check "alarm is removed when a different owner takes over" \
+  matches 'GPASSWD: -d alarm wheel' "$(retirement_run sfreiburg 1 1 2>&1)"
+
+check "alarm remains an administrator when it is the chosen owner" \
+  not matches 'GPASSWD:' "$(retirement_run alarm 1 1 2>&1)"
+
+check "a missing alarm account needs no cleanup" \
+  not matches 'GPASSWD:' "$(retirement_run sfreiburg 0 0 2>&1)"
+
+check "an already-demoted alarm account needs no cleanup" \
+  not matches 'GPASSWD:' "$(retirement_run sfreiburg 1 0 2>&1)"
+
+failed_retirement_is_refused() {
+  ! retirement_run sfreiburg 1 1 0 >/dev/null 2>&1
+}
+
+check "a failed alarm demotion stops the handoff" failed_retirement_is_refused
+
+ensure_user_run() {
+  local existing="$1" has_password="$2"
+  (
+    username=owner
+    ensure_wheel_sudo() { :; }
+    id() { [[ $existing == 1 ]]; }
+    useradd() { echo USERADD; }
+    user_has_password() { [[ $has_password == 1 ]]; }
+    passwd() { echo PASSWD; return 0; }
+    usermod() { echo USERMOD; }
+    user_in_group() { return 0; }
+    retire_asahi_admin() { echo RETIRE_ALARM; }
+    lock_root_account() { echo LOCK_ROOT; }
+    log() { :; }
+    ensure_user
+  )
+}
+
+new_owner_run=$(ensure_user_run 0 0)
+existing_owner_run=$(ensure_user_run 1 1)
+passwordless_owner_run=$(ensure_user_run 1 0)
+
+check "a new owner is created and given a password before the handoff" \
+  [ "$new_owner_run" = $'USERADD\nPASSWD\nUSERMOD\nRETIRE_ALARM\nLOCK_ROOT' ]
+
+check "an existing owner keeps its password and is made an administrator" \
+  [ "$existing_owner_run" = $'USERMOD\nRETIRE_ALARM\nLOCK_ROOT' ]
+
+check "a passwordless existing owner gets a password before the handoff" \
+  [ "$passwordless_owner_run" = $'PASSWD\nUSERMOD\nRETIRE_ALARM\nLOCK_ROOT' ]
+
+root_owner_run=$(
+  (
+    username=root
+    ensure_wheel_sudo() { echo MUTATED; }
+    ensure_user
+  ) 2>&1
+)
+root_owner_status=$?
+
+check "root is rejected at the account-mutation boundary" [ "$root_owner_status" != "0" ]
+check "rejecting root happens before account mutation" not matches MUTATED "$root_owner_run"
 
 no_unbound_when_piped() { ! matches 'unbound variable' "$(piped --status)"; }
 piped_reaches_main() { matches 'Omarchy Mac setup status' "$(piped --status)"; }

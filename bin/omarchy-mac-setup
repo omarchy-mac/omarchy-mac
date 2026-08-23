@@ -176,6 +176,11 @@ current_hostname() {
   printf '%s' "$name"
 }
 
+valid_username() {
+  local name="$1"
+  [[ $name != "root" && $name =~ ^[a-z_][a-z0-9_-]*$ ]]
+}
+
 # RFC 1123: each dot-separated label is 1–63 characters of letters, digits and
 # hyphens, and cannot start or end with a hyphen. Dots are allowed so a fully
 # qualified name can be given.
@@ -771,18 +776,53 @@ lock_root_account() {
   fi
 }
 
+user_in_group() {
+  local user="$1" group="$2"
+  id -nG "$user" 2>/dev/null | tr ' ' '\n' | grep -qx "$group"
+}
+
+retire_asahi_admin() {
+  local owner="$1"
+
+  # Asahi Alarm's minimal image uses alarm as its bootstrap administrator.
+  # Once a different permanent owner has working sudo access, leaving alarm in
+  # wheel gives polkit two administrator identities and can make it ask for the
+  # bootstrap account's password instead of the active owner's.
+  [[ $owner != "alarm" ]] || return 0
+  id -u alarm >/dev/null 2>&1 || return 0
+  user_in_group alarm wheel || return 0
+
+  log "Removing the Asahi bootstrap account alarm from wheel"
+  gpasswd -d alarm wheel >/dev/null ||
+    fail "could not remove alarm from wheel; refusing to leave two administrators"
+}
+
 ensure_user() {
+  valid_username "$username" || fail "invalid owner username: $username"
   ensure_wheel_sudo
 
   if ! id -u "$username" >/dev/null 2>&1; then
     log "Creating user $username"
     useradd -m -G wheel -s /bin/bash "$username"
+  fi
+
+  # A pre-existing account may be locked or have no password. It is not ready
+  # to replace the bootstrap administrator until it can authenticate to sudo
+  # and polkit itself.
+  if ! user_has_password "$username"; then
     log "Set a password for $username:"
     until passwd "$username"; do
       warn "Try again."
     done
   fi
 
+  # Also cover a pre-existing owner. Previously only useradd granted wheel
+  # membership, even though the root account could still be locked afterwards.
+  usermod -aG wheel "$username"
+  user_in_group "$username" wheel ||
+    fail "$username is not in wheel; refusing to lock root or retire alarm"
+
+  retire_asahi_admin "$username"
   lock_root_account "$username"
 }
 
@@ -1125,7 +1165,7 @@ ask_questions() {
 
   while [[ -z $username ]]; do
     read -rp "Username to create (your everyday login): " username
-    [[ $username =~ ^[a-z_][a-z0-9_-]*$ ]] || {
+    valid_username "$username" || {
       warn "That is not a valid Linux username."
       username=""
     }

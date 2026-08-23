@@ -17,12 +17,29 @@
 # on purpose -- these drivers can be damaged by what the hardware will happily
 # ask them to do.
 
-[[ $(uname -m) == "aarch64" ]] || return 0
-[[ -d /proc/device-tree/chosen/asahi ]] || [[ -f /proc/device-tree/compatible ]] || return 0
+compatible="${OMARCHY_APPLE_COMPATIBLE:-/proc/device-tree/compatible}"
+OMARCHY_ASAHI_AUDIO_PACKAGES_CHANGED=0
 
-echo "Installing the Apple Silicon audio stack"
-omarchy-pkg-add pipewire-pulse pipewire-alsa asahi-audio speakersafetyd ||
-  echo "Warning: some audio packages could not be installed; sound may not work."
+# Every device-tree machine has a compatible file, so it has to name Apple --
+# otherwise a Raspberry Pi would install the Asahi stack too.
+[[ $(uname -m) == "aarch64" ]] || return 0
+[[ -f $compatible ]] && grep -Faiq 'apple,' "$compatible" || return 0
+
+# pkg-missing rather than a bare pkg-add, so the migration can tell whether this
+# actually installed anything and only then ask for a reboot.
+if omarchy-pkg-missing pipewire-pulse pipewire-alsa asahi-audio speakersafetyd; then
+  echo "Installing the Apple Silicon audio stack"
+  omarchy-pkg-add pipewire-pulse pipewire-alsa asahi-audio speakersafetyd ||
+    echo "Warning: some audio packages could not be installed; sound may not work."
+
+  # A warning rather than a failure: hardware setup runs under set -e, so failing
+  # here would abort the whole install over speakers that can be fixed later.
+  if omarchy-pkg-present pipewire-pulse pipewire-alsa asahi-audio speakersafetyd; then
+    OMARCHY_ASAHI_AUDIO_PACKAGES_CHANGED=1
+  else
+    echo "Warning: the protected Asahi audio stack is incomplete; the speakers stay muted." >&2
+  fi
+fi
 
 # The daemon has to be running before the speakers will produce anything.
 sudo systemctl enable --now speakersafetyd >/dev/null 2>&1 ||
