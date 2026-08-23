@@ -54,7 +54,7 @@ confirm() {
 }
 
 checkout="$HOME/.local/share/omarchy"
-upgrade_ref="${OMARCHY_UPGRADE_REF:-main}"
+upgrade_ref="${OMARCHY_UPGRADE_REF:-quattro}"
 yes=0
 auto_reboot=0
 
@@ -132,6 +132,34 @@ switch_checkout_to_quattro() {
   git -C "$checkout" fetch origin "$upgrade_ref"
   git -C "$checkout" checkout "$upgrade_ref"
   git -C "$checkout" merge --ff-only "origin/$upgrade_ref"
+}
+
+# Refuses to continue unless the checked-out tree is Quattro. Without this a
+# wrong ref (the old default was main) got as far as installing packages and
+# writing under /usr and /etc before aborting on the first missing file.
+validate_quattro_tree() {
+  local path version
+
+  version=$(cat "$checkout/version" 2>/dev/null || echo unknown)
+  if [[ $version != 4.* ]]; then
+    fail "The '$upgrade_ref' tree at $checkout is not Quattro (version: $version). Use --ref quattro or unset OMARCHY_UPGRADE_REF."
+  fi
+
+  for path in \
+    etc/profile.d/omarchy.sh \
+    default/uwsm/env.d/10-omarchy \
+    default/environment.d/10-omarchy-fcitx.conf \
+    install/omarchy-base.packages; do
+    [[ -f $checkout/$path ]] ||
+      fail "The '$upgrade_ref' tree at $checkout is missing $path; it does not have the Quattro layout."
+  done
+
+  for path in omarchy-apply-system omarchy-provision-user; do
+    [[ -x $checkout/bin/$path ]] ||
+      fail "The '$upgrade_ref' tree at $checkout is missing bin/$path; it does not have the Quattro layout."
+  done
+
+  log "The '$upgrade_ref' tree at $checkout is Quattro ($version)"
 }
 
 install_quattro_packages() {
@@ -276,6 +304,7 @@ switch_to_networkmanager() {
 main() {
   backup_user_config
   switch_checkout_to_quattro
+  validate_quattro_tree
   install_quattro_packages
   wire_system_paths
   update_bashrc

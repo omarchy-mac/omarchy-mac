@@ -35,6 +35,72 @@ if grep -qE 'omarchy-setup-system|omarchy-finalize-user' "$upgrade_to_quattro_ma
 fi
 pass "Mac Quattro upgrade does not call the retired 3.x command names"
 
+# Issue #200: the ref used to default to main, so a no-argument run checked out
+# 3.8.2, installed packages against it, and aborted mid-upgrade on the first
+# missing Quattro file — leaving the machine half-migrated.
+grep -F 'upgrade_ref="${OMARCHY_UPGRADE_REF:-quattro}"' "$upgrade_to_quattro_mac" >/dev/null ||
+  fail "Mac Quattro upgrade defaults to the quattro ref" "expected: upgrade_ref=\"\${OMARCHY_UPGRADE_REF:-quattro}\""
+pass "Mac Quattro upgrade defaults to the quattro ref"
+
+validate_body=$(function_body validate_quattro_tree)
+[[ -n $validate_body ]] || fail "the Mac Quattro upgrade validates the selected tree"
+
+# The validator must run after the checkout switch but before packages are
+# installed or anything under /usr and /etc is written.
+main_body=$(function_body main)
+[[ $main_body == *install_quattro_packages* ]] ||
+  fail "main still installs the Quattro package set"
+steps_before_install=${main_body%%install_quattro_packages*}
+[[ $steps_before_install == *switch_checkout_to_quattro* && $steps_before_install == *validate_quattro_tree* ]] ||
+  fail "the tree validator runs before any package or system changes"
+pass "the tree validator runs before any package or system changes"
+
+# Exercise the validator itself against fake trees: a 3.x tree must be rejected,
+# a Quattro-shaped one accepted. The function reads $checkout/$upgrade_ref and
+# reports through fail(), so stub that out for the extraction run.
+check_tree() {
+  local tree_version="$1" description="$2" expect="$3" drop_path="${4:-}" status workdir
+
+  workdir=$(mktemp -d)
+  mkdir -p "$workdir/bin" "$workdir/etc/profile.d" "$workdir/default/uwsm/env.d" \
+    "$workdir/default/environment.d" "$workdir/install"
+  printf '%s\n' "$tree_version" >"$workdir/version"
+  : >"$workdir/etc/profile.d/omarchy.sh"
+  : >"$workdir/default/uwsm/env.d/10-omarchy"
+  : >"$workdir/default/environment.d/10-omarchy-fcitx.conf"
+  : >"$workdir/install/omarchy-base.packages"
+  printf '#!/bin/bash\n' >"$workdir/bin/omarchy-apply-system"
+  printf '#!/bin/bash\n' >"$workdir/bin/omarchy-provision-user"
+  chmod +x "$workdir/bin/omarchy-apply-system" "$workdir/bin/omarchy-provision-user"
+  [[ -z $drop_path ]] || rm -f "$workdir/$drop_path"
+
+  status=0
+  (
+    checkout=$workdir
+    upgrade_ref=quattro
+    log() { :; }
+    fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+    # function_body hands back the bare body; re-wrap it into a definition.
+    eval "validate_quattro_tree() {
+$validate_body
+}"
+    validate_quattro_tree
+  ) >/dev/null 2>&1 || status=$?
+  rm -rf "$workdir"
+
+  if [[ $expect == "reject" && $status == 0 ]]; then
+    fail "the tree validator rejects a non-Quattro tree ($description)"
+  elif [[ $expect == "accept" && $status != 0 ]]; then
+    fail "the tree validator accepts a Quattro tree ($description)" "exit status: $status"
+  fi
+}
+
+check_tree "3.8.2" "version 3.8.2" reject
+# The failure #200 reported: a 4.x-shaped version is not enough on its own.
+check_tree "4.0.0.alpha" "missing etc/profile.d/omarchy.sh" reject "etc/profile.d/omarchy.sh"
+check_tree "4.0.0.alpha" "version 4.0.0.alpha" accept
+pass "the tree validator only lets Quattro trees through"
+
 # The curl one-liner is written out in both the script and the guide, so a
 # branch rename can leave a 3.x user fetching an upgrade that no longer exists.
 script_url=$(grep -oE 'https://[^ ]*omarchy-upgrade-to-quattro-mac' "$upgrade_to_quattro_mac" | head -1)

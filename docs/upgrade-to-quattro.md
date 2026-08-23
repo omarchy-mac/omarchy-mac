@@ -53,7 +53,8 @@ while — Quickshell and a few other AUR packages are compiled on the machine.
 
 1. Backs up `~/.config` to `~/.config.omarchy3.<timestamp>.bak`.
 2. Switches `~/.local/share/omarchy` to the `quattro` branch (it refuses to run
-   if the checkout has uncommitted changes).
+   if the checkout has uncommitted changes, and refuses to continue unless the
+   checked-out tree is a Quattro one).
 3. Installs the Quattro package set from `install/omarchy-base.packages` with
    yay, skipping the few upstream packages that are x86-only, and installs
    `wf-recorder` — Apple GPUs cannot run gpu-screen-recorder, so screen
