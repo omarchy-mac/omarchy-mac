@@ -158,7 +158,7 @@ Item {
     NumberAnimation { target: root; property: "shakeOffset"; to: 0; duration: 55; easing.type: Easing.OutQuad }
   }
   FileView {
-    path: "/etc/pam.d/polkit-1"
+    path: "/usr/lib/pam.d/polkit-1"
     watchChanges: true
     printErrors: false
     onLoaded: root.loadPamConfig(text())
