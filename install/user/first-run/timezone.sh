@@ -21,7 +21,7 @@ timezone_needs_setting() {
   [[ -z $timezone || $timezone == "UTC" ]]
 }
 
-timezone_needs_setting || return 0
+timezone_needs_setting || exit 0
 
 omarchy-notification-send -u critical -g 󰥔 "Set your timezone" \
   "This machine is on $(current_timezone). Click to choose yours." \

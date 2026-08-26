@@ -32,4 +32,23 @@ if grep -F 'skip-first-run-update-notification' "$ROOT/install/user/first-run/wi
   fail "first-run does not track update notifications separately"
 fi
 
+cat >"$mock_bin/timedatectl" <<'SH'
+#!/bin/bash
+printf 'America/Los_Angeles\n'
+SH
+cat >"$mock_bin/omarchy-notification-send" <<'SH'
+#!/bin/bash
+touch "$OMARCHY_TEST_NOTIFICATION_SENT"
+SH
+chmod +x "$mock_bin/timedatectl" "$mock_bin/omarchy-notification-send"
+
+if ! OMARCHY_TEST_NOTIFICATION_SENT="$test_tmp/timezone-notification-sent" \
+  PATH="$mock_bin:$PATH" bash "$ROOT/install/user/first-run/timezone.sh" \
+  >"$test_tmp/timezone-output" 2>&1; then
+  fail "timezone first-run step succeeds when timezone is already configured" \
+    "$(<"$test_tmp/timezone-output")"
+fi
+[[ ! -e "$test_tmp/timezone-notification-sent" ]] || \
+  fail "timezone first-run step skips configured timezones"
+
 pass "first-run uses one lifecycle completion marker"

@@ -27,8 +27,8 @@ not() {
   ! "$@"
 }
 
-# The leaf is sourced by the first-run driver, so it is sourced here too, with
-# the notification recorded as a file rather than sent.
+# The first-run driver invokes the leaf as a standalone Bash script, with the
+# notification recorded as a file rather than sent.
 prompts_for_timezone() {
   local timezone="$1"
   rm -rf "$WORK/bin" "$WORK/notified"
@@ -37,7 +37,7 @@ prompts_for_timezone() {
   printf '#!/bin/bash\ntouch "%s/notified"\n' "$WORK" >"$WORK/bin/omarchy-notification-send"
   chmod +x "$WORK/bin"/*
 
-  PATH="$WORK/bin:$PATH" bash -c "source '$LEAF'" >/dev/null 2>&1
+  PATH="$WORK/bin:$PATH" bash "$LEAF" >/dev/null 2>&1
   [[ -e $WORK/notified ]]
 }
 
