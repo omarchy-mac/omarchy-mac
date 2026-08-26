@@ -110,3 +110,59 @@ doc_url=$(grep -oE 'https://[^ ]*omarchy-upgrade-to-quattro-mac' "$ROOT/docs/upg
   fail "the upgrade one-liner agrees between script and guide" "script: $script_url
 doc:    $doc_url"
 pass "the upgrade one-liner agrees between the script and the guide"
+
+# Issue #208: the package pass attempted every name in the default set, so a 3.x
+# machine spent hours on AUR builds install.sh deliberately skips -- and one of
+# them, quickshell-git, fails outright on the pre-upgrade GL stack.
+install_body=$(function_body install_quattro_packages)
+[[ -n $install_body ]] || fail "the Mac Quattro upgrade has an install_quattro_packages step"
+
+# Naming the matcher proves nothing: without the load the list is empty and the
+# filter answers no to everything. Pin the call, its order, and the override.
+install_code=$(grep -vE '^[[:space:]]*#' <<<"$install_body")
+[[ $install_code == *load_unavailable_packages* ]] ||
+  fail "the package pass loads the aarch64 unavailable list"
+[[ ${install_code%%while read*} == *load_unavailable_packages* ]] ||
+  fail "the unavailable list is loaded before the package loop reads it"
+grep -qF '${OMARCHY_TRY_UNAVAILABLE:-0} != "1" ]] && package_is_unavailable_here' <<<"$install_code" ||
+  fail "the filter runs on the loop and stays overridable with OMARCHY_TRY_UNAVAILABLE"
+pass "the upgrade filters the package set through the aarch64 unavailable list"
+
+# Exercise the matcher against a list on disk rather than trust its name.
+matcher_probe=$(mktemp -d)
+mkdir -p "$matcher_probe/install"
+printf '# a comment\n\nlisted-package\n' >"$matcher_probe/install/omarchy-aarch64-unavailable.packages"
+(
+  checkout="$matcher_probe"
+  eval "$(awk '/^load_unavailable_packages\(\) \{/,/^\}/' "$upgrade_to_quattro_mac")"
+  eval "$(awk '/^package_is_unavailable_here\(\) \{/,/^\}/' "$upgrade_to_quattro_mac")"
+  load_unavailable_packages
+  package_is_unavailable_here listed-package || exit 1
+  ! package_is_unavailable_here some-other-package || exit 1
+) || fail "the unavailable matcher answers from the list on disk"
+rm -rf "$matcher_probe"
+pass "the unavailable matcher answers from the list on disk"
+
+# Skipping quickshell-git is only safe where something else provides Quickshell.
+# A packaged install gets it from the omarchy package; this layout installs no
+# such package, so state the invariant rather than one spelling of it.
+quickshell_git_skipped=0
+if grep -qxF 'quickshell-git' "$ROOT/install/omarchy-aarch64-unavailable.packages"; then
+  quickshell_git_skipped=1
+fi
+installs_quickshell=0
+if grep -qE '^[[:space:]]*yay -S .*[[:space:]]quickshell([[:space:]]|$)' <<<"$install_code"; then
+  installs_quickshell=1
+fi
+(( ! quickshell_git_skipped || installs_quickshell )) ||
+  fail "quickshell-git is skipped and nothing installs quickshell: the upgrade leaves no shell"
+pass "the upgrade always ends up with Quickshell installed"
+
+# Every other fatal step reports through fail(); a bare set -e abort here would
+# die silently after the checkout has already been switched.
+if (( installs_quickshell )); then
+  grep -A1 -E '^[[:space:]]*yay -S .*[[:space:]]quickshell([[:space:]]|$)' <<<"$install_code" |
+    grep -qF 'fail "' ||
+    fail "a failed quickshell install reports through fail(), not a silent set -e abort"
+  pass "a failed quickshell install reports through fail()"
+fi

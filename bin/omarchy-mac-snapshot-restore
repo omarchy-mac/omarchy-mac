@@ -143,7 +143,7 @@ main() {
   (( ${#paths[@]} )) || fail "no snapshots found to restore"
 
   local choice=""
-  if command -v gum >/dev/null; then
+  if omarchy-cmd-present gum; then
     choice=$(printf '%s\n' "${labels[@]}" | gum choose --header "Restore which snapshot?") || exit 1
   else
     local i

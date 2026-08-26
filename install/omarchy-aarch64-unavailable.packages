@@ -24,14 +24,6 @@ obs-studio
 # emitting a misleading "skipped" warning for a package that cannot install here.
 dotnet-runtime
 
-# quickshell-git builds on aarch64, but the package pass skips it anyway: the
-# omarchy package depends on plain `quickshell`, which Arch Linux ARM ships in
-# extra (0.3.0-2), and installing both in one pass would fight over the
-# conflict. Migration 1784672586 swaps plain quickshell for the quickshell-git
-# binary from the [omarchy-aarch64] repo at login; until that binary is
-# published, the desktop stays on the repo package and only synchronous shell
-# restarts wait-for-exit is lost.
-quickshell-git
 
 # pinta is arch=('x86_64') in the AUR, so makepkg refuses it in seconds -- but
 # yay installs makedepends before makepkg gets that far, and pinta's are

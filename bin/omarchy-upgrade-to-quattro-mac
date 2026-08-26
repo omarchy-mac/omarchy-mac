@@ -182,11 +182,43 @@ ensure_arm_package_repo() {
     warn "Could not refresh package databases after adding the ARM repo."
 }
 
+# install.sh keeps the packages with no aarch64 build out of the set rather than
+# spend hours on one that fails an architecture check. The upgrade reads the same
+# list, so a 3.x machine is not the one path that still attempts them.
+load_unavailable_packages() {
+  local unavailable="$checkout/install/omarchy-aarch64-unavailable.packages" line
+
+  unavailable_packages=()
+  [[ -f $unavailable ]] || return 0
+
+  while read -r line; do
+    [[ -n $line ]] && unavailable_packages+=("$line")
+  done < <(grep -vE '^[[:space:]]*(#|$)' "$unavailable")
+}
+
+package_is_unavailable_here() {
+  local package="$1" candidate
+
+  for candidate in ${unavailable_packages[@]+"${unavailable_packages[@]}"}; do
+    [[ $candidate == "$package" ]] && return 0
+  done
+
+  return 1
+}
+
 install_quattro_packages() {
-  local package skipped=()
+  local package skipped=() unbuildable=()
+
+  load_unavailable_packages
 
   log "Installing the Quattro package set (this builds AUR packages and takes a while)"
   while read -r package; do
+    # OMARCHY_TRY_UNAVAILABLE=1 attempts them anyway: an AUR package can gain
+    # aarch64 support at any time, so a stale entry costs a flag, not a release.
+    if [[ ${OMARCHY_TRY_UNAVAILABLE:-0} != "1" ]] && package_is_unavailable_here "$package"; then
+      unbuildable+=("$package")
+      continue
+    fi
     if ! yay -S --needed --noconfirm "$package" </dev/null; then
       skipped+=("$package")
     fi
@@ -194,6 +226,10 @@ install_quattro_packages() {
 
   # Apple GPUs cannot run gpu-screen-recorder; screen recording falls back to wf-recorder.
   yay -S --needed --noconfirm wf-recorder </dev/null
+
+  if (( ${#unbuildable[@]} )); then
+    log "No aarch64 build is known, so these were not attempted: ${unbuildable[*]}"
+  fi
 
   if (( ${#skipped[@]} )); then
     warn "Skipped packages that would not install on aarch64: ${skipped[*]}"

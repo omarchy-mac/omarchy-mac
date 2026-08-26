@@ -203,7 +203,7 @@ Consider supporting the project: [![Buy Me A Coffee](https://img.shields.io/badg
 
 Thanks to Asahi Linux and Asahi Alarm for enabling Linux on Apple Silicon, and to DHH for creating Omarchy.
 
-If this guide helped you, please star the repository and share feedback in issues or discussions. If you enjoy Omarchy Mac, please share your experience on Twitter/X by tagging [@tiredkebab](https://x.com/tiredkebab).
+If this guide helped you, please star the repository and share feedback in issues or discussions. If you enjoy Omarchy Mac, please share your experience on Twitter/X by tagging [@OmarchyMac](https://x.com/OmarchyMac).
 
 ---
 

@@ -29,7 +29,12 @@ battery=$(upower -e 2>/dev/null | grep -iE '/devices/battery' | head -n 1)
 
 battery_info=$(upower -i "$battery")
 
-percentage=$(awk '/percentage/ { print int($2); exit }' <<<"$battery_info")
+# Keep UPower's unrounded percentage for the charge-hold comparisons below:
+# rounding first would let 79.5% cross an 80% hold threshold while still
+# charging. The bar widget shows Math.round of the same value, so round half-up
+# only for display -- truncating made the panel differ from the bar by 1%.
+raw_percentage=$(awk '/percentage/ { print $2 + 0; exit }' <<<"$battery_info")
+percentage=$(awk -v p="$raw_percentage" 'BEGIN { printf "%d", p + 0.5 }')
 capacity=$(awk '/energy-full:/ { printf "%d", $2; exit }' <<<"$battery_info")
 time_remaining=$(awk '/time to (empty|full)/ {
   value = $4
@@ -99,9 +104,9 @@ charge_holding=false
 if [[ $ac_online == "true" && -n $threshold_end ]]; then
   if [[ $state == "pending-charge" ]]; then
     charge_holding=true
-  elif [[ $state == "fully-charged" ]] && (( percentage < 99 )); then
+  elif [[ $state == "fully-charged" ]] && awk -v p="$raw_percentage" 'BEGIN { exit !(p < 99) }'; then
     charge_holding=true
-  elif [[ $state == "charging" && $charge_idle == "true" ]] && (( threshold_end < 99 && percentage >= threshold_end )); then
+  elif [[ $state == "charging" && $charge_idle == "true" ]] && (( threshold_end < 99 )) && awk -v p="$raw_percentage" -v t="$threshold_end" 'BEGIN { exit !(p >= t) }'; then
     charge_holding=true
   fi
 fi
@@ -117,7 +122,11 @@ if [[ $shell_output == "true" ]]; then
   printf 'size\t%s\n' "${capacity}Wh"
   printf 'time\t%s\n' "$time_remaining"
 
-  cycles=$(cat "$power_supply_path"/BAT*/cycle_count 2>/dev/null | head -1)
+  # The device's own sysfs directory first -- native-path names it, whatever
+  # it is called -- and only then the BAT* guess, which never matches
+  # macsmc-battery.
+  cycles=$(cat "$battery_path"/cycle_count 2>/dev/null | head -1)
+  [[ -z $cycles ]] && cycles=$(cat "$power_supply_path"/BAT*/cycle_count 2>/dev/null | head -1)
 
   [[ -n $cycles ]] && printf 'cycles\t%s\n' "$cycles"
 
