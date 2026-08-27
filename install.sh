@@ -125,12 +125,15 @@ ensure_asahi_alarm_keyring() {
 
   if ! sudo pacman-key --list-keys "$asahi_alarm_key" >/dev/null 2>&1; then
     log "Importing the Asahi Alarm package signing key"
-    sudo pacman-key --recv-keys "$asahi_alarm_key" --keyserver hkps://keys.openpgp.org
+    sudo pacman-key --recv-keys "$asahi_alarm_key" --keyserver hkps://keys.openpgp.org \
+      || fail "Could not import Asahi Alarm signing key; check network/keyserver"
+    sudo pacman-key --lsign-key "$asahi_alarm_key" \
+      || fail "Could not locally sign Asahi Alarm signing key"
   fi
-  sudo pacman-key --lsign-key "$asahi_alarm_key" >/dev/null
 
   log "Installing the Asahi Alarm package keyring"
-  sudo pacman -Sy --needed --noconfirm asahi-alarm-keyring
+  sudo pacman -Sy --noconfirm --needed asahi-alarm-keyring \
+    || fail "Could not install asahi-alarm-keyring; Asahi Alarm repo cannot be used"
 }
 
 # Compared in bash rather than with grep against a process substitution, which
@@ -149,7 +152,6 @@ ensure_arm_package_repo() {
     printf '\n%s\n' "$block" | sudo tee -a /etc/pacman.conf >/dev/null
   fi
 
-  ensure_asahi_alarm_keyring
   log "Refreshing package databases for ARM packages"
   sudo pacman -Sy --noconfirm
 }
@@ -282,6 +284,7 @@ main() {
   ensure_package_sources
   build_omarchy_packages
   install_omarchy_packages
+  ensure_asahi_alarm_keyring
   ensure_arm_package_repo
   install_default_package_set
   seed_user_defaults
