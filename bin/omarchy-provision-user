@@ -60,7 +60,9 @@ mkdir -p "$state_dir"
 # autologin images the build may have already marked finalize-user complete,
 # which would skip install/user/all.sh; run this explicitly so Chromium and
 # other apps do not prompt for a new keyring on first launch.
-source "${OMARCHY_INSTALL:-/usr/share/omarchy/install}/user/default-keyring.sh" || true
+if ! source "${OMARCHY_INSTALL:-/usr/share/omarchy/install}/user/default-keyring.sh"; then
+  echo "Warning: default-keyring.sh failed; continuing without passwordless keyring" >&2
+fi
 
 if omarchy-done check finalize-user && (( force == 0 )); then
   echo "User finalization already complete (rerun with --force to refresh)."
