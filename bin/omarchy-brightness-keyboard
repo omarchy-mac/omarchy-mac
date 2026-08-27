@@ -39,8 +39,9 @@ elif [[ $direction == "set" ]]; then
   fi
   max_brightness="$(brightnessctl -d "$device" max)"
   target=$(( percent * max_brightness / 100 ))
-  brightnessctl -d "$device" set "$target" >/dev/null
-  (( no_osd )) || omarchy-osd -i keyboard -p "$percent"
+  if brightnessctl -d "$device" set "$target" >/dev/null; then
+    (( no_osd )) || omarchy-osd -i keyboard -p "$percent"
+  fi
   exit 0
 elif [[ $direction == "off" ]]; then
   brightnessctl -sd "$device" set 0 >/dev/null
@@ -71,5 +72,6 @@ else
 fi
 
 # Set the new brightness.
-brightnessctl -d "$device" set "$new_brightness" >/dev/null
-(( no_osd )) || omarchy-osd -i keyboard -p "$(( new_brightness * 100 / max_brightness ))"
+if brightnessctl -d "$device" set "$new_brightness" >/dev/null; then
+  (( no_osd )) || omarchy-osd -i keyboard -p "$(( new_brightness * 100 / max_brightness ))"
+fi
