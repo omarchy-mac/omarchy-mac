@@ -480,11 +480,15 @@ def rpc_request(proc, request_id, method, params=None, timeout=8):
   proc.stdin.flush()
   deadline = time.time() + timeout
   while time.time() < deadline:
+    if proc.poll() is not None:
+      raise TimeoutError(f"{method}: codex process exited early with code {proc.returncode}")
     ready, _, _ = select.select([proc.stdout], [], [], 0.25)
     if not ready:
       continue
     line = proc.stdout.readline()
     if not line:
+      if proc.poll() is not None:
+        raise TimeoutError(f"{method}: codex process exited with code {proc.returncode}")
       break
     try:
       message = json.loads(line)
@@ -528,10 +532,10 @@ def fetch_codex_rpc():
 
   try:
     proc = subprocess.Popen(
-      [codex, "-s", "read-only", "-a", "on-request", "app-server"],
+      [codex, "-s", "read-only", "-a", "never", "app-server"],
       stdin=subprocess.PIPE,
       stdout=subprocess.PIPE,
-      stderr=subprocess.DEVNULL,
+      stderr=subprocess.PIPE,
       text=True,
       env=ENV,
     )
@@ -558,7 +562,13 @@ def fetch_codex_rpc():
         result["limits"].append(entry)
   except Exception as exc:
     result["usageStatusText"] = "Codex limits unavailable"
-    result["authHelpText"] = str(exc)
+    stderr_text = ""
+    if proc.stderr:
+      try:
+        stderr_text = proc.stderr.read()
+      except Exception:
+        pass
+    result["authHelpText"] = str(exc) + (f"\n{stderr_text}" if stderr_text else "")
   finally:
     try:
       proc.terminate()
