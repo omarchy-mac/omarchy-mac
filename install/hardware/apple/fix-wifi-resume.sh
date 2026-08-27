@@ -7,20 +7,25 @@
 #
 # Reload after resume, but only when the wedge signature actually appears, so
 # this is a no-op once the firmware bug is fixed.
+#
+# Logs: journalctl -u omarchy-wifi-resume-fix
 
 if [[ $(uname -m) == "aarch64" ]] &&
   lspci -nn | grep -E '14e4:(4425|4433)' >/dev/null; then
   echo "Detected Apple Silicon Broadcom Wi-Fi; installing resume recovery"
 
-  sudo tee /usr/local/bin/omarchy-wifi-resume-fix >/dev/null <<'SCRIPT'
+  cat > /usr/local/bin/omarchy-wifi-resume-fix <<'SCRIPT'
 #!/bin/sh
 WAIT_BEFORE=12    # backstop: reload anyway if wifi is still not up after this
 WAIT_AFTER=30     # seconds to wait for reconnect after a reload
 REJECTS=2         # ASSOC-REJECT status_code=16 events that confirm a wedge
 START=$(date '+%Y-%m-%d %H:%M:%S')
 wedged() {
-    n=$(journalctl --since "$START" -t wpa_supplicant --no-pager 2>/dev/null |
-        grep -c 'CTRL-EVENT-ASSOC-REJECT.*status_code=16')
+    journal_output=$(journalctl --since "$START" -t wpa_supplicant --no-pager 2>/dev/null || true)
+    if [ -z "$journal_output" ]; then
+      journal_output=$(journalctl -t wpa_supplicant --no-pager 2>/dev/null | tail -n 200 || true)
+    fi
+    n=$(printf '%s\n' "$journal_output" | grep -c 'CTRL-EVENT-ASSOC-REJECT.*status_code=16')
     [ "${n:-0}" -ge "$REJECTS" ]
 }
 wifi_iface() {
@@ -35,6 +40,9 @@ if [ "$(nmcli radio wifi 2>/dev/null)" = "disabled" ]; then
     echo "wifi radio is disabled, nothing to do"
     exit 0
 fi
+for cmd in nmcli journalctl modprobe; do
+  command -v "$cmd" >/dev/null 2>&1 || { echo "missing $cmd"; exit 1; }
+done
 IFACE=$(wifi_iface)
 : "${IFACE:=wlan0}"
 i=0
@@ -73,9 +81,9 @@ done
 echo "still not connected ${WAIT_AFTER}s after reload (iface=$IFACE state=${state:-none})"
 exit 1
 SCRIPT
-  sudo chmod 755 /usr/local/bin/omarchy-wifi-resume-fix
+  chmod 755 /usr/local/bin/omarchy-wifi-resume-fix
 
-  sudo tee /etc/systemd/system/omarchy-wifi-resume-fix.service >/dev/null <<'EOF'
+  cat > /etc/systemd/system/omarchy-wifi-resume-fix.service <<'EOF'
 [Unit]
 Description=Omarchy Wi-Fi Resume Fix for Apple Silicon Macs
 After=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
@@ -90,5 +98,5 @@ TimeoutStartSec=120
 WantedBy=suspend.target hibernate.target hybrid-sleep.target suspend-then-hibernate.target
 EOF
 
-  sudo systemctl enable omarchy-wifi-resume-fix.service
+  systemctl enable omarchy-wifi-resume-fix.service
 fi
