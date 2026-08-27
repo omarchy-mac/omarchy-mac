@@ -670,6 +670,7 @@ user_form() {
   fi
 
   omarchy_prompt_password || return $?
+  omarchy_prompt_keyboard_backlight || return $?
   omarchy_prompt_identity || return $?
 
   # Hostname and timezone are deferred to first boot with the rest of the user
@@ -686,6 +687,7 @@ confirm_form() {
   echo
   echo -e "Field,Value
 Keyboard,${keyboard_label:-English (US)}
+Keyboard backlight,${keyboard_backlight:-[Skipped]}
 Username,$username
 Password,$(printf "%${#password}s" | tr ' ' '*')
 Full name,${full_name:-[Skipped]}
