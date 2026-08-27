@@ -18,69 +18,72 @@ Panel {
 
   readonly property var visibleSections: brightnessAvailable ? ["brightness"] : []
 
-  function brightnessIpc(percent) {
-    IpcHandler {
-      id: ipc
-      target: root.ipcTarget
-      onCreate: {
-        if (percent === "get") {
-          var proc = Process {
-            command: ["omarchy-brightness-keyboard", "--no-osd", "get"]
-            onExited: (exitCode, stdout) => {
-              if (exitCode === 0) {
-                var value = Number(stdout.trim())
-                if (isFinite(value)) {
-                  root.brightnessPercent = Model.clampBrightness(value)
-                  root.brightnessAvailable = true
-                } else {
-                  root.brightnessAvailable = false
-                }
-              } else {
-                root.brightnessAvailable = false
-              }
-            }
-          }
-          proc.start()
-          proc.waitForExited()
-        } else if (percent !== "") {
-          var setProc = Process {
-            command: ["omarchy-brightness-keyboard", "--no-osd", "set", String(Model.clampBrightness(Number(percent)))]
-            onExited: (exitCode) => {
-              root.brightnessSetQueued = false
-              if (exitCode === 0) {
-                root.brightnessPercent = Model.clampBrightness(Number(percent))
-              }
-            }
-          }
-          setProc.start()
+  // Single IpcHandler at the panel level, matching the monitor panel pattern.
+  IpcHandler {
+    target: root.ipcTarget
+
+    function brightness(percent: string): string {
+      root.setBrightness(Number(percent))
+      return "ok"
+    }
+
+    function state(): string {
+      return JSON.stringify({
+        brightness: root.brightnessPercent,
+        brightnessAvailable: root.brightnessAvailable
+      })
+    }
+  }
+
+  // Process objects at panel level to avoid creating new ones per call.
+  Process {
+    id: getBrightnessProc
+    command: ["omarchy-brightness-keyboard", "--no-osd", "get"]
+    onExited: (exitCode, stdout) => {
+      if (exitCode === 0) {
+        var value = Number(stdout.trim())
+        if (isFinite(value)) {
+          root.brightnessPercent = Model.clampBrightness(value)
+          root.brightnessAvailable = true
+        } else {
+          root.brightnessAvailable = false
         }
-      }
-      onMessage: (msg) => {
-        if (msg && msg.brightness !== undefined) {
-          root.brightnessAvailable = msg.brightnessAvailable
-          root.brightnessPercent = Model.clampBrightness(msg.brightness)
-        }
+      } else {
+        root.brightnessAvailable = false
       }
     }
   }
 
-  function setBrightness(percent) {
-    if (!brightnessAvailable) return
-    root.brightnessPercent = Model.clampBrightness(percent)
-    root.brightnessSetQueued = true
-    brightnessIpc(String(root.brightnessPercent))
+  Process {
+    id: setBrightnessProc
+    onExited: (exitCode) => {
+      root.brightnessSetQueued = false
+      if (exitCode === 0) {
+        root.brightnessPercent = Model.clampBrightness(root.pendingBrightnessPercent)
+      }
+    }
   }
+
+  property int pendingBrightnessPercent: 0
 
   function refresh() {
-    brightnessIpc("get")
+    if (!getBrightnessProc.running) {
+      getBrightnessProc.start()
+    }
   }
 
-  Component.onCompleted: refresh()
-  Timer {
-    interval: 5000
-    running: true
-    repeat: true
-    onTriggered: root.refresh()
+  function setBrightness(value) {
+    var percent = Model.clampBrightness(value)
+    root.pendingBrightnessPercent = percent
+
+    if (setBrightnessProc.running) {
+      root.brightnessSetQueued = true
+      return
+    }
+
+    root.brightnessSetQueued = false
+    setBrightnessProc.command = ["omarchy-brightness-keyboard", "--no-osd", "set", String(percent)]
+    setBrightnessProc.start()
   }
 
   brightnessDebounce: Timer {
@@ -99,6 +102,14 @@ Panel {
   }
 
   onBrightnessAvailableChanged: buildSections()
+
+  Component.onCompleted: refresh()
+  Timer {
+    interval: 5000
+    running: true
+    repeat: true
+    onTriggered: root.refresh()
+  }
 
   content: Item {
     anchors.fill: parent
