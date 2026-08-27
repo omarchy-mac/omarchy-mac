@@ -131,7 +131,7 @@ ensure_asahi_alarm_keyring() {
 
   log "Installing the Asahi Alarm package keyring"
   if ! sudo pacman -Syy --needed --noconfirm asahi-alarm-keyring; then
-    fail "Failed to sync package databases for Asahi Alarm. Run 'sudo pacman -Syu' manually and retry."
+    fail "Stale ALARM package database; run 'sudo pacman -Syu' and retry."
   fi
 }
 
