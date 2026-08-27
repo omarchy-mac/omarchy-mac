@@ -3,6 +3,10 @@
 # omarchy:summary=Returns true when the laptop lid is closed
 # omarchy:hidden=true
 
+if [[ -f /proc/device-tree/compatible ]] && grep -qai apple /proc/device-tree/compatible 2>/dev/null; then
+  exit 1
+fi
+
 for state in /proc/acpi/button/lid/*/state; do
   [[ -r $state ]] || continue
   [[ $(< "$state") == *"closed"* ]] && exit 0

@@ -2,6 +2,13 @@
 
 # omarchy:summary=Returns true when running on a laptop (has a lid or laptop chassis).
 
+# Apple Silicon does not expose /proc/acpi/button/lid; fall back to the device
+# tree compatible string before consulting DMI, so clamshell-aware paths do not
+# falsely conclude the machine is a desktop.
+if [[ -f /proc/device-tree/compatible ]] && grep -qai apple /proc/device-tree/compatible 2>/dev/null; then
+  exit 0
+fi
+
 # A lid switch is the definitive signal for clamshell-capable hardware.
 for state in /proc/acpi/button/lid/*/state; do
   [[ -e $state ]] && exit 0
