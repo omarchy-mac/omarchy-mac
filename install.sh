@@ -130,7 +130,9 @@ ensure_asahi_alarm_keyring() {
   sudo pacman-key --lsign-key "$asahi_alarm_key" >/dev/null
 
   log "Installing the Asahi Alarm package keyring"
-  sudo pacman -Sy --needed --noconfirm asahi-alarm-keyring
+  if ! sudo pacman -Syy --needed --noconfirm asahi-alarm-keyring; then
+    fail "Failed to sync package databases for Asahi Alarm. Run 'sudo pacman -Syu' manually and retry."
+  fi
 }
 
 # Compared in bash rather than with grep against a process substitution, which
@@ -151,7 +153,9 @@ ensure_arm_package_repo() {
 
   ensure_asahi_alarm_keyring
   log "Refreshing package databases for ARM packages"
-  sudo pacman -Sy --noconfirm
+  if ! sudo pacman -Syy --noconfirm; then
+    fail "Failed to sync package databases. Run 'sudo pacman -Syu' manually and retry."
+  fi
 }
 
 load_unavailable_packages() {
