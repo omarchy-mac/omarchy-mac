@@ -670,6 +670,7 @@ user_form() {
   fi
 
   omarchy_prompt_password || return $?
+  omarchy_prompt_keyboard_backlight || return $?
   omarchy_prompt_identity || return $?
 
   # Hostname and timezone are deferred to first boot with the rest of the user

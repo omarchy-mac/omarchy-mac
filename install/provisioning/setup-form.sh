@@ -187,3 +187,33 @@ omarchy_prompt_timezone() {
 
   [[ -n $timezone ]] || timezone="UTC"
 }
+
+# Gate keyboard-backlight setup on the presence of a *kbd_backlight* LED. The
+# M2/M3 MacBook Air has no dedicated keys, so the user cannot discover this
+# control without an entry in Setup.
+omarchy_prompt_keyboard_backlight() {
+  if ! compgen -G '/sys/class/leds/*kbd_backlight*' >/dev/null; then
+    return 0
+  fi
+
+  local choice status
+  choice=$(printf '%s\n' \
+    "0% (off)" \
+    "25%" \
+    "50%" \
+    "75%" \
+    "100%" |
+    gum choose --height 5 --selected "50%" --header "Keyboard backlight") && status=0 || status=$?
+  ((status == 0)) || return $status
+
+  local percent
+  case "$choice" in
+    0%) percent=0 ;;
+    25%) percent=25 ;;
+    50%) percent=50 ;;
+    75%) percent=75 ;;
+    100%) percent=100 ;;
+  esac
+
+  omarchy-brightness-keyboard --no-osd set "$percent" >/dev/null 2>&1 || true
+}
