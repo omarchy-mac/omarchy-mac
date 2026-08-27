@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # omarchy:summary=Adjust keyboard backlight brightness using available steps.
-# omarchy:args=[--no-osd] <up|down|cycle|off|restore>
+# omarchy:args=[--no-osd] <get|set <0-100>|up|down|cycle|off|restore>
+# omarchy:examples=omarchy brightness keyboard get | omarchy brightness keyboard set 50 | omarchy brightness keyboard up
 
 no_osd=0
 if [[ ${1:-} == "--no-osd" ]]; then
@@ -25,7 +26,23 @@ if [[ -z $device ]]; then
   exit 1
 fi
 
-if [[ $direction == "off" ]]; then
+if [[ $direction == "get" ]]; then
+  max_brightness="$(brightnessctl -d "$device" max)"
+  current_brightness="$(brightnessctl -d "$device" get)"
+  echo $(( current_brightness * 100 / max_brightness ))
+  exit 0
+elif [[ $direction == "set" ]]; then
+  percent="${2:-}"
+  if [[ -z $percent || $percent -lt 0 || $percent -gt 100 ]]; then
+    echo "Usage: $(basename "$0") set <0-100>" >&2
+    exit 1
+  fi
+  max_brightness="$(brightnessctl -d "$device" max)"
+  target=$(( percent * max_brightness / 100 ))
+  brightnessctl -d "$device" set "$target" >/dev/null
+  (( no_osd )) || omarchy-osd -i keyboard -p "$percent"
+  exit 0
+elif [[ $direction == "off" ]]; then
   brightnessctl -sd "$device" set 0 >/dev/null
   exit 0
 elif [[ $direction == "restore" ]]; then
