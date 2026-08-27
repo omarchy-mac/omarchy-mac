@@ -487,6 +487,8 @@ def rpc_request(proc, request_id, method, params=None, timeout=8):
       continue
     line = proc.stdout.readline()
     if not line:
+      if proc.poll() is not None:
+        raise TimeoutError(f"{method}: codex process exited with code {proc.returncode}")
       break
     try:
       message = json.loads(line)
