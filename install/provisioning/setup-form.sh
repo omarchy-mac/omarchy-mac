@@ -19,7 +19,8 @@
 #
 # Callers supply `notice <message> <seconds>` for validation feedback, and set
 # the variables these prompts write: keyboard, keyboard_label, username,
-# password, password_confirmation, full_name, email_address, hostname, timezone.
+# password, password_confirmation, full_name, email_address, hostname, timezone,
+# keyboard_backlight.
 
 OMARCHY_FORM_BACK=1
 OMARCHY_FORM_SIGNAL=130
@@ -193,6 +194,7 @@ omarchy_prompt_timezone() {
 # control without an entry in Setup.
 omarchy_prompt_keyboard_backlight() {
   if ! compgen -G '/sys/class/leds/*kbd_backlight*' >/dev/null; then
+    keyboard_backlight=""
     return 0
   fi
 
@@ -215,5 +217,6 @@ omarchy_prompt_keyboard_backlight() {
     100%) percent=100 ;;
   esac
 
+  keyboard_backlight="$percent"
   omarchy-brightness-keyboard --no-osd set "$percent" >/dev/null 2>&1 || true
 }
