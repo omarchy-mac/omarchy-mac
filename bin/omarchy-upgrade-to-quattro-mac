@@ -55,6 +55,7 @@ confirm() {
 
 checkout="$HOME/.local/share/omarchy"
 upgrade_ref="${OMARCHY_UPGRADE_REF:-quattro}"
+readonly asahi_alarm_key="12CE6799A94A3F1B5DDFFE88F576553597FB8FEB"
 yes=0
 auto_reboot=0
 
@@ -162,6 +163,28 @@ validate_quattro_tree() {
   log "The '$upgrade_ref' tree at $checkout is Quattro ($version)"
 }
 
+# The Asahi Alarm image ships this keyring already, so a Mac installed from it
+# has the master key trusted. A 3.x machine put together on a generic aarch64
+# base does not, and pacman refuses to create the asahi-alarm database until
+# that key is trusted: the refresh below fails, and the Quattro package pass
+# then reports "database file for 'asahi-alarm' does not exist" rather than the
+# signing-key problem that caused it (#235). Mirrors install.sh's
+# ensure_asahi_alarm_keyring; the upgrade is self-contained, so it carries its
+# own copy.
+ensure_asahi_alarm_keyring() {
+  grep -q '^\[asahi-alarm\]' /etc/pacman.conf || return 0
+  pacman -Q asahi-alarm-keyring >/dev/null 2>&1 && return 0
+
+  if ! sudo pacman-key --list-keys "$asahi_alarm_key" >/dev/null 2>&1; then
+    log "Importing the Asahi Alarm package signing key"
+    sudo pacman-key --recv-keys "$asahi_alarm_key" --keyserver hkps://keys.openpgp.org
+  fi
+  sudo pacman-key --lsign-key "$asahi_alarm_key" >/dev/null
+
+  log "Installing the Asahi Alarm package keyring"
+  sudo pacman -Sy --needed --noconfirm asahi-alarm-keyring
+}
+
 # A 3.x machine's /etc/pacman.conf predates the [omarchy-aarch64] repo. Without
 # it, every Quattro package that the ARM repo serves as a prebuilt binary
 # resolves to an hours-long AUR build instead -- quickshell-git's build even
@@ -178,6 +201,8 @@ ensure_arm_package_repo() {
 
   log "Adding the Omarchy ARM package repo"
   printf '\n%s\n' "$block" | sudo tee -a /etc/pacman.conf >/dev/null
+
+  ensure_asahi_alarm_keyring
   sudo pacman -Sy --noconfirm >/dev/null 2>&1 ||
     warn "Could not refresh package databases after adding the ARM repo."
 }
