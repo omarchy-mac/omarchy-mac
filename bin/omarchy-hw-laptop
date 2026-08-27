@@ -2,6 +2,11 @@
 
 # omarchy:summary=Returns true when running on a laptop (has a lid or laptop chassis).
 
+# Apple Silicon reports itself through the device-tree compatible string.
+if [[ -f /proc/device-tree/compatible ]] && grep -qai apple /proc/device-tree/compatible 2>/dev/null; then
+  exit 0
+fi
+
 # A lid switch is the definitive signal for clamshell-capable hardware.
 for state in /proc/acpi/button/lid/*/state; do
   [[ -e $state ]] && exit 0
@@ -10,7 +15,8 @@ done
 # Fall back to the DMI chassis type for laptops that don't expose an ACPI lid
 # button. 8=Portable 9=Laptop 10=Notebook 14=Sub Notebook 30=Tablet
 # 31=Convertible 32=Detachable.
-case $(< /sys/class/dmi/id/chassis_type 2>/dev/null) in
+read -r chassis_type < /sys/class/dmi/id/chassis_type 2>/dev/null
+case "$chassis_type" in
 8 | 9 | 10 | 14 | 30 | 31 | 32) exit 0 ;;
 esac
 

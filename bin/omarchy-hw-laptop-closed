@@ -3,6 +3,15 @@
 # omarchy:summary=Returns true when the laptop lid is closed
 # omarchy:hidden=true
 
+# Apple Silicon has no ACPI, so ask logind over D-Bus.
+if command -v busctl >/dev/null 2>&1; then
+  case "$(busctl get-property org.freedesktop.login1 /org/freedesktop/login1 \
+            org.freedesktop.login1.Manager LidClosed 2>/dev/null)" in
+    "b true")  exit 0 ;;
+    "b false") exit 1 ;;
+  esac
+fi
+
 for state in /proc/acpi/button/lid/*/state; do
   [[ -r $state ]] || continue
   [[ $(< "$state") == *"closed"* ]] && exit 0
