@@ -52,11 +52,11 @@ if systemctl is-active --quiet NetworkManager.service 2>/dev/null; then
   systemctl stop systemd-networkd.service 2>/dev/null || true
 fi
 
-# Prefer systemd-resolved's stub when it is already available. During a live
-# install enable-services.sh only enables daemons; it deliberately does not
-# start them before reboot. Do not replace a working resolver with a dangling
-# stub link in that window, or later hardware setup loses network access.
-if [[ -e /run/systemd/resolve/stub-resolv.conf ]]; then
+# Prefer systemd-resolved's stub only when systemd-resolved is already active.
+# During a live install enable-services.sh only enables daemons; it deliberately
+# does not start them before reboot. Do not replace a working resolver with a
+# dangling stub link in that window, or later hardware setup loses network access.
+if systemctl is-active --quiet systemd-resolved.service 2>/dev/null && [[ -e /run/systemd/resolve/stub-resolv.conf ]]; then
   ln -sfn ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 elif [[ -e /run/NetworkManager/resolv.conf ]]; then
   ln -sfn ../run/NetworkManager/resolv.conf /etc/resolv.conf
