@@ -43,6 +43,31 @@ for limine_package in limine limine-mkinitcpio-hook limine-snapper-sync; do
 done
 pass "the package build drops the limine stack from the Apple Silicon dependencies"
 
+# The hotfix rebuild number has to land on omarchy and omarchy-settings, not
+# the keyring or the font. Run in a subshell: sourcing the builder replaces
+# fail() with one that exits without TAP.
+rel_dir=$(mktemp -d)
+printf 'pkgrel=1\n' >"$rel_dir/PKGBUILD"
+if ! (
+  source "$build_script"
+  set_pkgrel "$rel_dir/PKGBUILD"
+  [[ $(cat "$rel_dir/PKGBUILD") == "pkgrel=1" ]] || exit 1
+  OMARCHY_PKGREL=2 set_pkgrel "$rel_dir/PKGBUILD"
+  [[ $(cat "$rel_dir/PKGBUILD") == "pkgrel=2" ]] || exit 1
+  for bad in nope 0 02 -1 1.5; do
+    if ( OMARCHY_PKGREL=$bad set_pkgrel "$rel_dir/PKGBUILD" >/dev/null 2>&1 ); then
+      exit 1
+    fi
+  done
+); then
+  rm -rf "$rel_dir"
+  fail "set_pkgrel no-ops without OMARCHY_PKGREL, writes a number, and rejects junk"
+fi
+rm -rf "$rel_dir"
+grep -A2 'package == "omarchy-settings"' "$build_script" | grep -q set_pkgrel ||
+  fail "the package build stamps pkgrel on omarchy and omarchy-settings"
+pass "the package build can stamp a Mac-only pkgrel on omarchy and omarchy-settings"
+
 # The refresh runs from omarchy-reinstall-configs under set -e, so a machine
 # without limine must no-op rather than abort the seeding step.
 grep -F 'omarchy-cmd-missing limine' "$ROOT/bin/omarchy-refresh-limine" >/dev/null ||

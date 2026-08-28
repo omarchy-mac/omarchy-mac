@@ -5,6 +5,10 @@
 # omarchy, omarchy-settings, omarchy-keyring, and ttf-jetbrains-mono-nerd-basic
 # are all arch=any, so they need no architecture-specific build. The only Apple
 # Silicon delta is the limine bootloader stack, patched out below.
+#
+# OMARCHY_PKGREL bumps pkgrel on omarchy and omarchy-settings only, so a Mac
+# hotfix can ship as 4.0.1-2 without waiting for an upstream 4.0.2 tag. Leave
+# it unset to keep the PKGBUILD values.
 
 set -euo pipefail
 
@@ -55,6 +59,19 @@ find_omarchy_pkgs() {
     return 0
   done
   return 1
+}
+
+set_pkgrel() {
+  local pkgbuild="$1" rel=${OMARCHY_PKGREL:-}
+
+  # Mac hotfixes repackage the same upstream pkgver between tags, so they bump
+  # pkgrel rather than pkgver to stay upgradeable without stealing the next
+  # upstream tag. Unset OMARCHY_PKGREL to keep the PKGBUILD values.
+  [[ -n $rel ]] || return 0
+  [[ $rel =~ ^[1-9][0-9]*$ ]] || fail "OMARCHY_PKGREL must be a positive whole number, got: $rel"
+  grep -qE '^pkgrel=' "$pkgbuild" || fail "no pkgrel= in $pkgbuild"
+  sed -i "s/^pkgrel=.*/pkgrel=$rel/" "$pkgbuild"
+  grep -qx "pkgrel=$rel" "$pkgbuild" || fail "could not set pkgrel=$rel in $pkgbuild"
 }
 
 # Drop the limine entries from depends=() without forking the PKGBUILD, so it
@@ -110,6 +127,9 @@ build_package() {
   if [[ $package == "omarchy" ]]; then
     strip_limine_dependencies "$build_dir/$package/PKGBUILD"
   fi
+  if [[ $package == "omarchy" || $package == "omarchy-settings" ]]; then
+    set_pkgrel "$build_dir/$package/PKGBUILD"
+  fi
 
   # SRCDEST caches downloaded sources outside the throwaway build directory, so
   # a rebuild does not re-fetch the 125 MB font archive.
@@ -152,4 +172,6 @@ main() {
   ls -1 "$output_dir"/*.pkg.tar.*
 }
 
-main "$@"
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  main "$@"
+fi
