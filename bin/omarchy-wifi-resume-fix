@@ -36,9 +36,15 @@ wifi_state() {
 # than once confirms the wedge and we can reload immediately - typically ~7s
 # after resume - rather than sitting out the full backstop timer.
 wedged() {
-  local n
-  n=$(journalctl --since "$START" -t wpa_supplicant --no-pager 2>/dev/null |
-    grep -c 'CTRL-EVENT-ASSOC-REJECT.*status_code=16')
+  local n output
+  # The `--since` window is empty when the clock stepped backwards across
+  # resume (an RTC quirk on some Apple Silicon kernels); fall back to the
+  # trailing wpa_supplicant log so the signature is still caught.
+  output=$(journalctl --since "$START" -t wpa_supplicant --no-pager 2>/dev/null || true)
+  if [[ -z $output ]]; then
+    output=$(journalctl -t wpa_supplicant --no-pager 2>/dev/null | tail -n 200 || true)
+  fi
+  n=$(printf '%s\n' "$output" | grep -c 'CTRL-EVENT-ASSOC-REJECT.*status_code=16')
   ((${n:-0} >= REJECTS))
 }
 
@@ -47,6 +53,13 @@ if [[ $(nmcli radio wifi 2>/dev/null) == "disabled" ]]; then
   echo "wifi radio is disabled, nothing to do"
   exit 0
 fi
+
+for cmd in nmcli journalctl modprobe; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "missing $cmd - cannot recover Wi-Fi"
+    exit 1
+  fi
+done
 
 IFACE=$(wifi_iface)
 : "${IFACE:=wlan0}"
