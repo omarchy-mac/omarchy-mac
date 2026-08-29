@@ -55,10 +55,10 @@ fail() {
 
 normalize_channel() {
   case "${1:-}" in
-    stable|master|main) echo stable ;;
-    rc) echo rc ;;
-    edge|dev) echo edge ;;
-    *) return 1 ;;
+  stable | master | main) echo stable ;;
+  rc) echo rc ;;
+  edge | dev) echo edge ;;
+  *) return 1 ;;
   esac
 }
 
@@ -93,61 +93,56 @@ use_dev_packages=${OMARCHY_UPGRADE_DEV:-0}
 
 while (($#)); do
   case "$1" in
-    -y|--yes)
-      yes=1
-      shift
-      ;;
-    --reboot)
-      auto_reboot=1
-      shift
-      ;;
-    --dev)
-      use_dev_packages=1
-      shift
-      ;;
-    --channel)
-      channel_override="${2:-}"
-      channel_override_cli=1
-      shift 2
-      ;;
-    --user)
-      target_user="${2:-}"
-      shift 2
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      fail "Unknown option: $1"
-      ;;
+  -y | --yes)
+    yes=1
+    shift
+    ;;
+  --reboot)
+    auto_reboot=1
+    shift
+    ;;
+  --dev)
+    use_dev_packages=1
+    shift
+    ;;
+  --channel)
+    channel_override="${2:-}"
+    channel_override_cli=1
+    shift 2
+    ;;
+  --user)
+    target_user="${2:-}"
+    shift 2
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    fail "Unknown option: $1"
+    ;;
   esac
 done
 
 case "$use_dev_packages" in
-  1|true|yes|on) use_dev_packages=1 ;;
-  0|false|no|off|"") use_dev_packages=0 ;;
-  *) fail "Invalid OMARCHY_UPGRADE_DEV value '$use_dev_packages'. Use 1/0, true/false, or pass --dev." ;;
+1 | true | yes | on) use_dev_packages=1 ;;
+0 | false | no | off | "") use_dev_packages=0 ;;
+*) fail "Invalid OMARCHY_UPGRADE_DEV value '$use_dev_packages'. Use 1/0, true/false, or pass --dev." ;;
 esac
-
-# This is the upstream x86 upgrade: it repoints pacman at Omarchy's x86_64
-# mirrors and packages, which do not serve aarch64. On Apple Silicon the Mac
-# upgrade (omarchy-upgrade-to-quattro-mac) wires the source checkout instead.
-[[ $(uname -m) != "aarch64" ]] || fail "This is the upstream x86 upgrade. On Apple Silicon run omarchy-upgrade-to-quattro-mac."
 
 # Land on the Quattro equivalent of wherever the machine already is, unless the
 # caller said otherwise. Stable machines get the production packages off the
 # stable channel. rc and edge machines stay on their own mirror, but take the
 # dev packages, because that is where Quattro lives until it ships.
-if [[ -z $channel_override ]] && (( ! use_dev_packages )); then
+if [[ -z $channel_override ]] && ((!use_dev_packages)); then
   case "$(detect_installed_channel || true)" in
-    stable) channel_override=stable ;;
-    rc) channel_override=rc use_dev_packages=1 ;;
-    edge) channel_override=edge use_dev_packages=1 ;;
+  stable) channel_override=stable ;;
+  rc) channel_override=rc use_dev_packages=1 ;;
+  edge) channel_override=edge use_dev_packages=1 ;;
   esac
 fi
 
-if (( use_dev_packages )); then
+if ((use_dev_packages)); then
   # The dev packages are only published to the edge package repo, which the rc
   # and edge channels both point at; only stable is incompatible. rc keeps its
   # own Arch mirror either way.
@@ -163,7 +158,7 @@ if (( use_dev_packages )); then
   fi
 fi
 
-if { [[ -n $channel_override ]] || (( channel_override_cli )); } && ! valid_channel "$channel_override"; then
+if { [[ -n $channel_override ]] || ((channel_override_cli)); } && ! valid_channel "$channel_override"; then
   fail "Invalid channel '$channel_override'. Use stable, rc, or edge."
 fi
 
@@ -171,12 +166,12 @@ if ! command -v pacman >/dev/null 2>&1; then
   fail "This upgrade is only supported on Arch/Omarchy systems with pacman."
 fi
 
-if ! command -v sudo >/dev/null 2>&1 && (( EUID != 0 )); then
+if ! command -v sudo >/dev/null 2>&1 && ((EUID != 0)); then
   fail "sudo is required when not running as root."
 fi
 
 if [[ -z $target_user ]]; then
-  if (( EUID == 0 )); then
+  if ((EUID == 0)); then
     target_user="${SUDO_USER:-}"
   else
     target_user="${USER:-$(id -un)}"
@@ -198,7 +193,7 @@ target_runtime_dir="/run/user/$target_uid"
 package_path="/usr/share/omarchy/bin:/usr/local/bin:/usr/bin:/bin:$target_home/.local/bin"
 
 as_root() {
-  if (( EUID == 0 )); then
+  if ((EUID == 0)); then
     "$@"
   else
     sudo "$@"
@@ -206,7 +201,7 @@ as_root() {
 }
 
 run_as_user() {
-  if (( EUID == 0 )); then
+  if ((EUID == 0)); then
     if command -v sudo >/dev/null 2>&1; then
       sudo -u "$target_user" -H "$@"
     else
@@ -302,7 +297,7 @@ discover_wayland_display() {
 
   local candidates=()
   mapfile -t candidates < <(find "$target_runtime_dir" -maxdepth 1 -type s -name 'wayland-*' -printf '%f\n' 2>/dev/null || true)
-  (( ${#candidates[@]} == 1 )) || return 1
+  ((${#candidates[@]} == 1)) || return 1
   printf '%s\n' "${candidates[0]}"
 }
 
@@ -327,28 +322,28 @@ discover_hyprland_signature() {
 
   local candidates=()
   mapfile -t candidates < <(find "$target_runtime_dir/hypr" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null || true)
-  (( ${#candidates[@]} == 1 )) || return 1
+  ((${#candidates[@]} == 1)) || return 1
   printf '%s\n' "${candidates[0]}"
 }
 
 channel=$(normalize_channel "${channel_override:-stable}")
 
 case "$channel" in
-  stable)
-    mirror_server='https://stable-mirror.omarchy.org/$repo/os/$arch'
-    package_server='https://pkgs.omarchy.org/stable/$arch'
-    ;;
-  rc)
-    mirror_server='https://rc-mirror.omarchy.org/$repo/os/$arch'
-    package_server='https://pkgs.omarchy.org/edge/$arch'
-    ;;
-  edge)
-    mirror_server='https://mirror.omarchy.org/$repo/os/$arch'
-    package_server='https://pkgs.omarchy.org/edge/$arch'
-    ;;
+stable)
+  mirror_server='https://stable-mirror.omarchy.org/$repo/os/$arch'
+  package_server='https://pkgs.omarchy.org/stable/$arch'
+  ;;
+rc)
+  mirror_server='https://rc-mirror.omarchy.org/$repo/os/$arch'
+  package_server='https://pkgs.omarchy.org/edge/$arch'
+  ;;
+edge)
+  mirror_server='https://mirror.omarchy.org/$repo/os/$arch'
+  package_server='https://pkgs.omarchy.org/edge/$arch'
+  ;;
 esac
 
-if (( ! yes )); then
+if ((!yes)); then
   printf '\033[2J\033[3J\033[H' >/dev/tty
   cat <<EOF
 ████████▄   ███    █▄     ▄████████     ███         ███        ▄████████  ▄██████▄
@@ -378,7 +373,7 @@ upgrade_completed=0
 cleanup_on_exit() {
   local exit_status=$?
 
-  if (( hyprland_config_reload_suppressed )); then
+  if ((hyprland_config_reload_suppressed)); then
     restore_hyprland_config_reload >/dev/null 2>&1 || true
   fi
 
@@ -388,7 +383,7 @@ cleanup_on_exit() {
 
   # set -e aborts without a word, and the last thing on screen is a green
   # progress line, so a half-finished upgrade otherwise reads as a finished one.
-  if (( exit_status != 0 && upgrade_started && ! upgrade_completed )); then
+  if ((exit_status != 0 && upgrade_started && !upgrade_completed)); then
     printf '\n\033[31mUpgrade incomplete - do NOT reboot.\033[0m\n' >&2
     printf 'The system is part Omarchy 3 and part Omarchy quattro; rebooting now can leave it without a working network or desktop.\n' >&2
     printf 'Fix the error reported above and run this script again. Re-running is safe and resumes the remaining steps.\n' >&2
@@ -398,9 +393,12 @@ cleanup_on_exit() {
 }
 trap cleanup_on_exit EXIT
 
-if (( EUID != 0 )); then
+if ((EUID != 0)); then
   sudo -v
-  while true; do sudo -n true; sleep 60; done 2>/dev/null &
+  while true; do
+    sudo -n true
+    sleep 60
+  done 2>/dev/null &
   sudo_keepalive_pid=$!
 fi
 
@@ -565,21 +563,21 @@ preserve_kernel_cmdline_root() {
   for param in $cmdline; do
     key=${param%%=*}
     case $key in
-      root)
-        have_root=1
-        boot_params+=("$param")
-        ;;
-      rw | ro)
-        have_mount_mode=1
-        boot_params+=("$param")
-        ;;
-      cryptdevice | cryptkey | rd.luks.name | rd.luks.uuid | rd.luks.options | rd.luks.key | rd.luks.crypttab | dm-mod.create)
-        have_unlock=1
-        boot_params+=("$param")
-        ;;
-      rootflags | rootfstype | rootwait | rootdelay | resume | resume_offset | rd.lvm.lv | rd.lvm.vg | rd.md.uuid | rd.dm.uuid)
-        boot_params+=("$param")
-        ;;
+    root)
+      have_root=1
+      boot_params+=("$param")
+      ;;
+    rw | ro)
+      have_mount_mode=1
+      boot_params+=("$param")
+      ;;
+    cryptdevice | cryptkey | rd.luks.name | rd.luks.uuid | rd.luks.options | rd.luks.key | rd.luks.crypttab | dm-mod.create)
+      have_unlock=1
+      boot_params+=("$param")
+      ;;
+    rootflags | rootfstype | rootwait | rootdelay | resume | resume_offset | rd.lvm.lv | rd.lvm.vg | rd.md.uuid | rd.dm.uuid)
+      boot_params+=("$param")
+      ;;
     esac
   done
 
@@ -734,7 +732,7 @@ migrate_1password_beta_package() {
 install_omarchy_quattro_packages() {
   local omarchy_package=omarchy
   local settings_package=omarchy-settings
-  if (( use_dev_packages )); then
+  if ((use_dev_packages)); then
     omarchy_package=omarchy-dev
     settings_package=omarchy-settings-dev
   fi
@@ -750,7 +748,7 @@ install_omarchy_quattro_packages() {
   local base_packages=()
 
   log "Upgrading system packages and installing Omarchy quattro packages"
-  (( use_dev_packages )) && log "Using dev packages [omarchy-dev / omarchy-settings-dev]"
+  ((use_dev_packages)) && log "Using dev packages [omarchy-dev / omarchy-settings-dev]"
   # --noconfirm answers "no" to conflict-removal prompts. --ask 4 preselects
   # removing the conflicting package, which is required for legacy packages like
   # ttf-jetbrains-mono-nerd -> ttf-jetbrains-mono-nerd-basic.
@@ -760,7 +758,7 @@ install_omarchy_quattro_packages() {
   if [[ -f /usr/share/omarchy/install/omarchy-base.packages ]]; then
     log "Installing Omarchy quattro default package set"
     mapfile -t base_packages < <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' /usr/share/omarchy/install/omarchy-base.packages)
-    if (( ${#base_packages[@]} )); then
+    if ((${#base_packages[@]})); then
       as_root pacman -S --needed --noconfirm --ask 4 --overwrite='*' "${base_packages[@]}"
       mark_packages_explicit "${base_packages[@]}"
     fi
@@ -801,7 +799,7 @@ install_hardware_transition_packages() {
     hardware_packages+=(vulkan-asahi)
   fi
 
-  if (( ${#hardware_packages[@]} > 0 )); then
+  if ((${#hardware_packages[@]} > 0)); then
     log "Installing hardware support needed by the Omarchy quattro layout"
     as_root pacman -S --needed --noconfirm "${hardware_packages[@]}"
     mark_packages_explicit "${hardware_packages[@]}"
@@ -1178,7 +1176,7 @@ set_hyprland_reload_state() {
 }
 
 restore_hyprland_config_reload() {
-  (( hyprland_config_reload_suppressed )) || return 0
+  ((hyprland_config_reload_suppressed)) || return 0
 
   set_hyprland_reload_state false
 
@@ -1265,7 +1263,7 @@ run_post_upgrade_update_steps() {
     update_status=0
     update_output=$(run_as_user_omarchy omarchy-update-available 2>&1) || update_status=$?
 
-    if (( update_status == 0 )); then
+    if ((update_status == 0)); then
       warn "Updates are still available after the upgrade; run omarchy-update after reboot:"
       printf '%s\n' "$update_output" >&2
     fi
@@ -1334,7 +1332,7 @@ apply_system_transition() {
 
   as_root install -d -m 0777 /etc/chromium/policies/managed
   as_root install -d -m 0755 /usr/lib/chromium
-  printf '%s\n' '{"browser":{"theme":{"color_scheme":0,"color_scheme2":0}}}' | \
+  printf '%s\n' '{"browser":{"theme":{"color_scheme":0,"color_scheme2":0}}}' |
     as_root tee /usr/lib/chromium/initial_preferences >/dev/null
 
   # Deliberately do NOT add the user to the docker group. That group is
@@ -2378,9 +2376,9 @@ WARNING: You must address any errors in the above before rebooting.
 
 EOF
 
-if (( boot_cmdline_unsafe )); then
+if ((boot_cmdline_unsafe)); then
   warn "Skipping reboot: root= could not be confirmed in the boot entries. Repair the kernel cmdline (see the warnings above) before rebooting, or the system will drop to an emergency shell."
-elif (( auto_reboot )); then
+elif ((auto_reboot)); then
   log "Rebooting because --reboot was passed"
   as_root systemctl reboot
 elif gum confirm "Reboot to complete Quattro upgrade now?" </dev/tty; then
