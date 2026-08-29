@@ -9,6 +9,11 @@ at `/usr/share/omarchy`. **No Omarchy packages are published for Apple
 Silicon**, so a Mac gets there by a different route depending on how it was
 installed:
 
+- **Either command works on a Mac.** `omarchy-upgrade-to-quattro` is the
+  upstream x86 upgrade, which would repoint pacman at x86_64 mirrors that do
+  not serve aarch64. On Apple Silicon it hands off to
+  `omarchy-upgrade-to-quattro-mac` instead of running, so either name is fine.
+  An older checkout refuses rather than handing off — update first.
 - **A fresh install** builds those same packages locally — `install.sh` runs
   `build-packages.sh` and `pacman -U`s the result — so `/usr/share/omarchy` is
   ordinary package content, exactly as on x86. The checkout at
