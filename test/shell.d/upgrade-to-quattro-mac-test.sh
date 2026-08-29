@@ -166,3 +166,95 @@ if (( installs_quickshell )); then
     fail "a failed quickshell install reports through fail(), not a silent set -e abort"
   pass "a failed quickshell install reports through fail()"
 fi
+
+# Issue #235: a machine put together on a generic aarch64 base carries the
+# [asahi-alarm] stanza without its signing keyring, and pacman will not create
+# that database until the master key is trusted. install.sh bootstraps the key
+# before it refreshes; the upgrade refreshes the same databases, so it needs the
+# same bootstrap or the Quattro package pass fails with a missing database and
+# never names the key as the cause.
+keyring_body=$(function_body ensure_asahi_alarm_keyring)
+[[ -n $keyring_body ]] || fail "the Mac Quattro upgrade bootstraps the Asahi Alarm keyring"
+
+grep -qF 'pacman-key --recv-keys "$asahi_alarm_key"' <<<"$keyring_body" ||
+  fail "the upgrade bootstraps the Asahi Alarm package signing key"
+grep -qF 'pacman-key --lsign-key "$asahi_alarm_key"' <<<"$keyring_body" ||
+  fail "the upgrade locally trusts the Asahi Alarm package signing key"
+grep -qF 'pacman -Sy --needed --noconfirm asahi-alarm-keyring' <<<"$keyring_body" ||
+  fail "the upgrade installs the Asahi Alarm package keyring"
+
+# Trusting the key after the refresh it exists to unblock would fix nothing.
+keyring_call=$(grep -n '^  ensure_asahi_alarm_keyring$' "$upgrade_to_quattro_mac" | cut -d: -f1)
+refresh_call=$(grep -n 'pacman -Sy --noconfirm' "$upgrade_to_quattro_mac" | grep -v -- '--needed' |
+  head -1 | cut -d: -f1)
+[[ -n $keyring_call && -n $refresh_call ]] ||
+  fail "the upgrade bootstraps the Asahi keyring before refreshing package databases"
+(( keyring_call < refresh_call )) ||
+  fail "the Asahi keyring is trusted before the package database refresh"
+
+# Two copies of the same bootstrap, because the upgrade is self-contained and
+# cannot source the installer. The fingerprint is the one part that turns silent
+# if it drifts, so pin them to each other rather than to a literal here.
+install_key=$(grep -oE 'asahi_alarm_key="[0-9A-F]+"' "$ROOT/install.sh" | head -1)
+upgrade_key=$(grep -oE 'asahi_alarm_key="[0-9A-F]+"' "$upgrade_to_quattro_mac" | head -1)
+[[ -n $install_key ]] || fail "install.sh pins the Asahi Alarm signing key"
+[[ $upgrade_key == "$install_key" ]] ||
+  fail "the upgrade pins the same Asahi Alarm signing key as install.sh" "installer: $install_key
+upgrade:   $upgrade_key"
+pass "the Quattro upgrade trusts the Asahi Alarm signing key before refreshing"
+
+# Both early exits matter: a machine without the stanza has nothing to trust,
+# and one that already has the keyring must not be sent to a keyserver on every
+# upgrade. Run the function against stubs rather than read its guards.
+keyring_probe=$(mktemp -d)
+mkdir -p "$keyring_probe/bin"
+cat >"$keyring_probe/bin/grep" <<'SH'
+#!/bin/bash
+exit "${STUB_STANZA_PRESENT:-0}"
+SH
+cat >"$keyring_probe/bin/pacman" <<'SH'
+#!/bin/bash
+if [[ $1 == "-Q" ]]; then
+  exit "${STUB_KEYRING_INSTALLED:-0}"
+fi
+printf 'pacman %s\n' "$*" >>"$STUB_LOG"
+SH
+cat >"$keyring_probe/bin/sudo" <<'SH'
+#!/bin/bash
+printf 'sudo %s\n' "$*" >>"$STUB_LOG"
+# An untrusted key: --list-keys fails, so the import path has to run.
+[[ $1 == "pacman-key" && $2 == "--list-keys" ]] && exit 1
+exit 0
+SH
+chmod +x "$keyring_probe/bin/grep" "$keyring_probe/bin/pacman" "$keyring_probe/bin/sudo"
+
+run_keyring_bootstrap() {
+  (
+    export PATH="$keyring_probe/bin:$PATH"
+    export STUB_LOG="$keyring_probe/calls" STUB_STANZA_PRESENT="$1" STUB_KEYRING_INSTALLED="$2"
+    : >"$STUB_LOG"
+    log() { :; }
+    asahi_alarm_key="probe-key"
+    eval "$(awk '/^ensure_asahi_alarm_keyring\(\) \{/,/^\}/' "$upgrade_to_quattro_mac")"
+    ensure_asahi_alarm_keyring
+  )
+  cat "$keyring_probe/calls"
+}
+
+calls=$(run_keyring_bootstrap 1 0)
+[[ -z $calls ]] ||
+  fail "no Asahi repo stanza means nothing to bootstrap" "$calls"
+
+calls=$(run_keyring_bootstrap 0 0)
+[[ -z $calls ]] ||
+  fail "an installed asahi-alarm-keyring is left alone" "$calls"
+
+calls=$(run_keyring_bootstrap 0 1)
+grep -qF 'pacman-key --recv-keys probe-key' <<<"$calls" ||
+  fail "a missing keyring imports the signing key" "$calls"
+grep -qF 'pacman-key --lsign-key probe-key' <<<"$calls" ||
+  fail "a missing keyring locally signs the imported key" "$calls"
+grep -qF 'pacman -Sy --needed --noconfirm asahi-alarm-keyring' <<<"$calls" ||
+  fail "a missing keyring is installed from the repo" "$calls"
+rm -rf "$keyring_probe"
+pass "the keyring bootstrap runs only where it is needed"
