@@ -26,11 +26,6 @@ retires the old one.
 
 ## Read this first
 
-- **Never run `omarchy-upgrade-to-quattro` on a Mac.** That command is the
-  upstream x86 upgrade: it rewrites `/etc/pacman.d/mirrorlist` to point at
-  Omarchy's x86_64 package mirrors, which do not serve aarch64. Running it
-  breaks pacman for the whole system. The command ships in this repo because we
-  track upstream — the Mac upgrade is `omarchy-upgrade-to-quattro-mac` below.
 - **The upgrade is one-way.** There is no supported downgrade to 3.x.
 - **Back up first.** At minimum, know that your macOS side is safe and copy
   anything irreplaceable off the Linux side. The script also backs up
