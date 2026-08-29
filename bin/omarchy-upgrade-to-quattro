@@ -1,5 +1,20 @@
 #!/bin/bash
 
+# Apple Silicon: this is upstream's x86 upgrade, which rewrites the mirrorlist
+# to x86_64 mirrors and breaks pacman for the whole system. Hand off to the Mac
+# upgrade instead of running, whichever name the user reached for.
+
+if [[ $(uname -m) == aarch64 ]]; then
+  if command -v omarchy-upgrade-to-quattro-mac >/dev/null; then
+    exec omarchy-upgrade-to-quattro-mac "$@"
+  fi
+
+  echo "This is the x86 upgrade and would break pacman on Apple Silicon." >&2
+  echo "Run the Mac upgrade instead:" >&2
+  echo "  curl -fsSL https://raw.githubusercontent.com/omarchy-mac/omarchy-mac/quattro/bin/omarchy-upgrade-to-quattro-mac | bash" >&2
+  exit 1
+fi
+
 # omarchy:summary=Upgrade a legacy Omarchy install to the package-backed Omarchy quattro layout.
 # omarchy:args=[--yes] [--reboot] [--dev] [--channel stable|rc|edge] [--user USER]
 # omarchy:examples=omarchy upgrade to quattro | omarchy upgrade to quattro --dev
