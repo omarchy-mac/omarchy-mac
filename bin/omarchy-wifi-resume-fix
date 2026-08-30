@@ -21,6 +21,13 @@ REJECTS=2      # ASSOC-REJECT status_code=16 events that confirm a wedge
 
 START=$(date '+%Y-%m-%d %H:%M:%S')
 
+# Journal position at start: entries after this cursor are post-resume no
+# matter what the wall clock says. On some Apple Silicon kernels the clock
+# steps backwards across resume, which would leave a --since window empty; an
+# unwindowed read is worse, counting stale rejects from the last genuine
+# wedge. The cursor is immune to both.
+CURSOR=$(journalctl -q -n 0 --show-cursor 2>/dev/null | sed -n 's/^-- cursor: //p')
+
 wifi_iface() {
   nmcli -t -f DEVICE,TYPE device status 2>/dev/null |
     awk -F: '$2 == "wifi" { print $1; exit }'
@@ -35,16 +42,21 @@ wifi_state() {
 # every few seconds. A healthy association never does this, so seeing it more
 # than once confirms the wedge and we can reload immediately - typically ~7s
 # after resume - rather than sitting out the full backstop timer.
+# The \b keeps status_code=160-169 from counting as the signature.
+REJECT_SIGNATURE='CTRL-EVENT-ASSOC-REJECT.*status_code=16\b'
+
 wedged() {
-  local n output
-  # The `--since` window is empty when the clock stepped backwards across
-  # resume (an RTC quirk on some Apple Silicon kernels); fall back to the
-  # trailing wpa_supplicant log so the signature is still caught.
-  output=$(journalctl --since "$START" -t wpa_supplicant --no-pager 2>/dev/null || true)
-  if [[ -z $output ]]; then
-    output=$(journalctl -t wpa_supplicant --no-pager 2>/dev/null | tail -n 200 || true)
+  local n
+  if [[ -n $CURSOR ]]; then
+    n=$(journalctl -q --after-cursor "$CURSOR" -t wpa_supplicant --no-pager 2>/dev/null |
+      grep -c "$REJECT_SIGNATURE")
+  else
+    # No cursor (unreadable journal), so a --since window is the best left. If
+    # the clock stepped backwards across resume it comes back empty and the
+    # backstop recovers instead - history from before suspend must not count.
+    n=$(journalctl -q --since "$START" -t wpa_supplicant --no-pager 2>/dev/null |
+      grep -c "$REJECT_SIGNATURE")
   fi
-  n=$(printf '%s\n' "$output" | grep -c 'CTRL-EVENT-ASSOC-REJECT.*status_code=16')
   ((${n:-0} >= REJECTS))
 }
 
@@ -54,8 +66,11 @@ if [[ $(nmcli radio wifi 2>/dev/null) == "disabled" ]]; then
   exit 0
 fi
 
+# These are runtime invariants, but this runs from a bare systemd unit right
+# after resume; a missing tool should say so in the journal rather than
+# surface as a command-not-found mid-recovery.
 for cmd in nmcli journalctl modprobe; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
+  if omarchy-cmd-missing "$cmd"; then
     echo "missing $cmd - cannot recover Wi-Fi"
     exit 1
   fi
