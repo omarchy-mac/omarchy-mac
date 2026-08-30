@@ -7,7 +7,10 @@ echo "Recover Wi-Fi after resume on Apple Silicon Macs"
 # here for existing installs.
 
 [[ $(uname -m) == "aarch64" ]] || exit 0
-lspci -nn | grep -qE "14e4:(4425|4433)" || exit 0
+# grep without -q reads all of lspci's output: this runs under pipefail, where
+# an early -q exit would kill a chatty lspci with SIGPIPE and read the failed
+# pipeline as "no such hardware" (#6608).
+lspci -nn | grep -E "14e4:(4425|4433)" >/dev/null || exit 0
 
 # Another user on this machine may already have applied the repair.
 if systemctl is-enabled --quiet omarchy-wifi-resume-fix.service 2>/dev/null; then
