@@ -9,6 +9,11 @@ at `/usr/share/omarchy`. **No Omarchy packages are published for Apple
 Silicon**, so a Mac gets there by a different route depending on how it was
 installed:
 
+- **Either command works on a Mac.** `omarchy-upgrade-to-quattro` is the
+  upstream x86 upgrade, which would repoint pacman at x86_64 mirrors that do
+  not serve aarch64. On Apple Silicon it hands off to
+  `omarchy-upgrade-to-quattro-mac` instead of running, so either name is fine.
+  An older checkout refuses rather than handing off — update first.
 - **A fresh install** builds those same packages locally — `install.sh` runs
   `build-packages.sh` and `pacman -U`s the result — so `/usr/share/omarchy` is
   ordinary package content, exactly as on x86. The checkout at
@@ -26,11 +31,6 @@ retires the old one.
 
 ## Read this first
 
-- **Never run `omarchy-upgrade-to-quattro` on a Mac.** That command is the
-  upstream x86 upgrade: it rewrites `/etc/pacman.d/mirrorlist` to point at
-  Omarchy's x86_64 package mirrors, which do not serve aarch64. Running it
-  breaks pacman for the whole system. The command ships in this repo because we
-  track upstream — the Mac upgrade is `omarchy-upgrade-to-quattro-mac` below.
 - **The upgrade is one-way.** There is no supported downgrade to 3.x.
 - **Back up first.** At minimum, know that your macOS side is safe and copy
   anything irreplaceable off the Linux side. The script also backs up
