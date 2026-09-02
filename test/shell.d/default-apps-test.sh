@@ -14,12 +14,18 @@ install_log="$test_tmp/install-log"
 terminal_log="$test_tmp/terminal-log"
 notification_log="$test_tmp/notification-log"
 setup_log="$test_tmp/setup-log"
+launcher_log="$test_tmp/launcher-log"
 browser_file="$test_tmp/browser"
 mkdir -p "$mock_bin" "$test_home/.config" "$installed_dir"
 
 cat >"$mock_bin/omarchy-cmd-missing" <<'SH'
 #!/bin/bash
 [[ ! -e $OMARCHY_TEST_INSTALLED_DIR/$1 ]]
+SH
+
+cat >"$mock_bin/omarchy-cmd-present" <<'SH'
+#!/bin/bash
+[[ -e $OMARCHY_TEST_INSTALLED_DIR/$1 ]]
 SH
 
 cat >"$mock_bin/omarchy-launch-floating-terminal-with-presentation" <<'SH'
@@ -30,6 +36,16 @@ SH
 cat >"$mock_bin/omarchy-notification-send" <<'SH'
 #!/bin/bash
 printf '%s\0' "$@" >>"$OMARCHY_TEST_NOTIFICATION_LOG"
+SH
+
+cat >"$mock_bin/omarchy-launch-tui" <<'SH'
+#!/bin/bash
+printf 'tui:%s\n' "$*" >>"$OMARCHY_TEST_LAUNCHER_LOG"
+SH
+
+cat >"$mock_bin/omarchy-test-editor" <<'SH'
+#!/bin/bash
+printf 'inline:%s:%s\n' "${0##*/}" "$*" >>"$OMARCHY_TEST_LAUNCHER_LOG"
 SH
 
 cat >"$mock_bin/omarchy-test-setup-call" <<'SH'
@@ -66,10 +82,19 @@ omarchy-pkg-add)
   printf 'pkg:%s\n' "$package" >>"$OMARCHY_TEST_INSTALL_LOG"
   case $package in
   chromium) command=chromium ;;
+  nano) command=nano ;;
+  micro) command=micro ;;
   cursor-bin) command=cursor ;;
   sublime-text-4) command=sublime_text ;;
   vim) command=vim ;;
   neovim) command=nvim ;;
+  esac
+  ;;
+omarchy-pkg-aur-add)
+  package=$1
+  printf 'aur:%s\n' "$package" >>"$OMARCHY_TEST_INSTALL_LOG"
+  case $package in
+  fresh-editor-bin) command=fresh ;;
   esac
   ;;
 omarchy-install-browser)
@@ -102,11 +127,13 @@ omarchy-install-editor-*)
 esac
 
 [[ ${OMARCHY_TEST_INSTALL_FAIL:-false} != "true" ]] || exit 1
+[[ ${OMARCHY_TEST_INSTALL_FALSE_SUCCESS:-false} != "true" ]] || exit 0
 touch "$OMARCHY_TEST_INSTALLED_DIR/$command"
 SH
 
 for installer in \
   omarchy-pkg-add \
+  omarchy-pkg-aur-add \
   omarchy-install-browser \
   omarchy-install-terminal \
   omarchy-install-editor-vscode \
@@ -132,6 +159,7 @@ export OMARCHY_TEST_INSTALL_LOG="$install_log"
 export OMARCHY_TEST_TERMINAL_LOG="$terminal_log"
 export OMARCHY_TEST_NOTIFICATION_LOG="$notification_log"
 export OMARCHY_TEST_SETUP_LOG="$setup_log"
+export OMARCHY_TEST_LAUNCHER_LOG="$launcher_log"
 export OMARCHY_TEST_BROWSER_FILE="$browser_file"
 
 assert_missing_opens_installer() {
@@ -171,7 +199,14 @@ editor_cases=(
   'vim vim pkg:vim'
   'emacs emacs editor:emacs'
   'nvim nvim pkg:neovim'
+  'nano nano pkg:nano'
+  'micro micro pkg:micro'
+  'fresh fresh aur:fresh-editor-bin'
 )
+
+for editor in nano micro fresh; do
+  ln -s omarchy-test-editor "$mock_bin/$editor"
+done
 
 for entry in "${browser_cases[@]}"; do
   read -r selection command installer <<<"$entry"
@@ -186,6 +221,13 @@ for entry in "${editor_cases[@]}"; do
   assert_missing_opens_installer editor "$selection"
 done
 pass "missing defaults open visible installers for every supported app"
+
+if omarchy-default-editor unsupported >"$test_tmp/editor-usage" 2>&1; then
+  fail "unsupported editor selection returns an error"
+fi
+grep -Fq 'Usage: omarchy-default-editor <code|cursor|zed|sublime_text|helix|vim|emacs|nvim|nano|micro|fresh>' \
+  "$test_tmp/editor-usage" || fail "editor usage lists every supported selection"
+pass "editor usage lists the supported selections"
 
 for entry in "${browser_cases[@]}"; do
   read -r selection command installer <<<"$entry"
@@ -251,9 +293,37 @@ for entry in "${editor_cases[@]}"; do
   read -r selection command installer <<<"$entry"
   rm -f "$installed_dir/$command"
   : >"$install_log"
+  : >"$notification_log"
   omarchy-default-editor --install "$selection"
   [[ $(<"$install_log") == "$installer" ]] || fail "$selection uses its editor installer"
   [[ $(omarchy-default-editor) == "$command" ]] || fail "$selection becomes the default editor after installation"
+  case $selection in
+  code) name=VSCode ;;
+  cursor) name=Cursor ;;
+  zed) name=Zed ;;
+  sublime_text) name="Sublime Text" ;;
+  helix) name=Helix ;;
+  vim) name=Vim ;;
+  emacs) name=Emacs ;;
+  nvim) name=Neovim ;;
+  nano) name=Nano ;;
+  micro) name=Micro ;;
+  fresh) name=Fresh ;;
+  esac
+  case $selection in
+  nano | micro | fresh)
+    mapfile -d '' -t notification_args <"$notification_log"
+    ((${#notification_args[@]} == 3)) || fail "$selection sends exactly three notification arguments"
+    [[ ${notification_args[0]} == "-g" ]] || fail "$selection puts -g first in the notification arguments"
+    [[ -n ${notification_args[1]} ]] || fail "$selection sends a nonempty notification glyph"
+    [[ ${notification_args[2]} == "$name is now the default editor" ]] ||
+      fail "$selection sends the exact success notification"
+    ;;
+  *)
+    tr '\0' '\n' <"$notification_log" | grep -Fq "$name is now the default editor" ||
+      fail "$selection sends a success notification after installation"
+    ;;
+  esac
 done
 pass "editor defaults install every missing editor before selection"
 
@@ -267,8 +337,47 @@ pass "installed defaults are selected immediately"
 
 previous_editor=$(omarchy-default-editor)
 rm -f "$installed_dir/vim"
+: >"$notification_log"
 if OMARCHY_TEST_INSTALL_FAIL=true omarchy-default-editor --install vim >"$test_tmp/install-failure" 2>&1; then
   fail "failed default installation returns an error"
 fi
 [[ $(omarchy-default-editor) == "$previous_editor" ]] || fail "failed installation preserves the default"
+[[ ! -s $notification_log ]] || fail "failed installation sends no success notification"
 pass "failed installation preserves the current default"
+
+for selection in nano micro fresh; do
+  rm -f "$installed_dir/$selection"
+  before_editor=$(omarchy-default-editor)
+  : >"$notification_log"
+  if OMARCHY_TEST_INSTALL_FALSE_SUCCESS=true omarchy-default-editor --install "$selection" >"$test_tmp/false-success-$selection" 2>&1; then
+    fail "$selection false-success installation returns an error"
+  fi
+  [[ $(omarchy-default-editor) == "$before_editor" ]] || fail "$selection false-success preserves the default"
+  [[ ! -e $installed_dir/$selection ]] || fail "$selection false-success does not mark the command installed"
+  [[ ! -s $notification_log ]] || fail "$selection false-success sends no success notification"
+done
+pass "false-success installations preserve state and notifications"
+
+isolated_home="$test_tmp/isolated-home"
+mkdir -p "$isolated_home"
+: >"$notification_log"
+if HOME="$isolated_home" OMARCHY_TEST_INSTALL_FALSE_SUCCESS=true \
+  omarchy-default-editor --install fresh >"$test_tmp/false-success-fresh-first-selection" 2>&1; then
+  fail "Fresh false-success first selection returns an error"
+fi
+[[ ! -e $isolated_home/.local/state/omarchy/defaults/editor ]] ||
+  fail "Fresh false-success first selection does not create state"
+[[ ! -s $notification_log ]] || fail "Fresh false-success first selection sends no notification"
+pass "false-success first selection leaves no state"
+
+for editor in nano micro fresh; do
+  touch "$installed_dir/$editor"
+  printf '%s\n' "$editor" >"$test_home/.local/state/omarchy/defaults/editor"
+  : >"$launcher_log"
+  omarchy-launch-editor sample.txt
+  grep -Fxq "tui:$editor sample.txt" "$launcher_log" || fail "$editor launches through the TUI wrapper"
+  : >"$launcher_log"
+  omarchy-launch-editor --inline sample.txt
+  grep -Fxq "inline:$editor:sample.txt" "$launcher_log" || fail "$editor launches directly in inline mode"
+done
+pass "nano, micro, and fresh keep launcher command names consistent"
