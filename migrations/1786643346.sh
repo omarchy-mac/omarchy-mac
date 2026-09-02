@@ -124,12 +124,65 @@ unverified_repairs_exist() {
 
 # A browser only rewrites its own Preferences on exit, so a repair can only be
 # reverted by a browser attached to a profile this migration has to touch.
-# Whether a profile is open is mechanical: a running Chromium-family browser
-# holds a SingletonLock (and socket) inside its user-data-dir.
+# Chromium's POSIX SingletonLock is deliberately a symlink to a nonexistent
+# hostname-pid string, even while the browser is running. Classify that target
+# instead of treating the symlink itself as proof that a browser is attached.
 profile_open() {
-  # -L catches a SingletonLock left as a dangling symlink; -e covers a plain
-  # file, and -S the socket — any of them means a browser is attached.
-  [[ -L $1/SingletonLock || -e $1/SingletonLock || -S $1/SingletonSocket ]]
+  local profile_root="$1" lock="$1/SingletonLock" socket="$1/SingletonSocket"
+  local target host pid local_host process_name family
+
+  # Permission or metadata failures are ambiguous; defer rather than mutate a
+  # profile whose ownership cannot be inspected safely.
+  [[ -d $profile_root && -r $profile_root && -x $profile_root ]] || return 0
+  [[ -S $socket ]] && return 0
+  if [[ -e $lock && ! -L $lock ]]; then
+    # Older Chromium used a regular SingletonLock. Any present non-symlink
+    # lock remains conservative, including an unexpected object type.
+    return 0
+  fi
+  [[ -L $lock ]] || return 1
+
+  target=$(readlink "$lock") || return 0
+  host=${target%-*}
+  pid=${target##*-}
+  [[ -n $host && $host != "$target" && $pid =~ ^[0-9]+$ ]] || return 0
+  local_host=$(hostname 2>/dev/null) || return 0
+  [[ $host == "$local_host" ]] || return 0
+
+  # A missing local PID is stale. If kill -0 is inconclusive, ps distinguishes
+  # an absent PID from a live process whose signal permission is restricted.
+  command -v ps >/dev/null 2>&1 || return 0
+  if ! process_name=$(ps -p "$pid" -o comm= 2>/dev/null); then
+    kill -0 "$pid" 2>/dev/null && return 0
+    return 1
+  fi
+  if [[ -z $process_name ]]; then
+    kill -0 "$pid" 2>/dev/null && return 0
+    return 1
+  fi
+
+  process_name="${process_name#"${process_name%%[![:space:]]*}"}"
+  process_name="${process_name%"${process_name##*[![:space:]]}"}"
+  process_name=${process_name##*/}
+  case "$profile_root" in
+    */chromium) family=chromium ;;
+    */google-chrome|*/google-chrome-beta|*/google-chrome-unstable) family=google-chrome ;;
+    */BraveSoftware/Brave-Browser|*/BraveSoftware/Brave-Browser-Beta|*/BraveSoftware/Brave-Browser-Nightly) family=brave ;;
+    */microsoft-edge|*/microsoft-edge-beta|*/microsoft-edge-dev) family=edge ;;
+    */vivaldi) family=vivaldi ;;
+    */opera) family=opera ;;
+    */helium) family=helium ;;
+    *) return 0 ;;
+  esac
+
+  case "$family:$process_name" in
+    chromium:chromium|chromium:chromium-browser|chromium:chrome) return 0 ;;
+    google-chrome:google-chrome|google-chrome:chrome) return 0 ;;
+    brave:brave-browser|brave:brave) return 0 ;;
+    edge:microsoft-edge|edge:msedge) return 0 ;;
+    vivaldi:vivaldi|vivaldi:vivaldi-bin|opera:opera|helium:helium) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # Gate on a pending — or to-be-verified — profile actually being open, not on
