@@ -2,7 +2,7 @@
 # Install optional proprietary/AUR apps (1Password, etc.)
 
 # Only run on aarch64
-if [ "$(uname -m)" != "aarch64" ]; then
+if ! omarchy-hw-aarch64; then
     echo "Skipping optional apps: not aarch64 architecture"
     return 0
 fi
