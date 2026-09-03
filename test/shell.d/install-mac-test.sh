@@ -68,6 +68,33 @@ grep -A2 'package == "omarchy-settings"' "$build_script" | grep -q set_pkgrel ||
   fail "the package build stamps pkgrel on omarchy and omarchy-settings"
 pass "the package build can stamp a Mac-only pkgrel on omarchy and omarchy-settings"
 
+# build-output is the hand-off directory for one install attempt. Keeping an
+# archive from an earlier retry makes pacman see two versions of the same
+# package; detached signatures are metadata, not package archives.
+grep -qF 'remove_old_packages' "$build_script" ||
+  fail "the package build clears archives from an earlier retry"
+grep -qF 'rm -f -- "$artifact"' "$build_script" ||
+  fail "the package build removes stale package archives safely"
+grep -qF '[[ -f $artifact && $artifact != *.sig ]]' "$build_script" ||
+  fail "the package build does not hand detached signatures to the installer"
+grep -qF '[[ -f $artifact && $artifact != *.sig ]]' "$install_script" ||
+  fail "the installer does not pass detached signatures to pacman"
+pass "the Apple Silicon package hand-off contains only current archives"
+
+# Clearing the hand-off directory is only useful if main calls it before the
+# package loop. Pin the ordering so a future refactor cannot leave the helper
+# covered in isolation while retries still mix old and new archives.
+main_body=$(awk '/^main\(\) \{/{inside=1} inside {print} inside && /^}/ {exit}' "$build_script")
+remove_line=$(grep -nF '  remove_old_packages' <<<"$main_body" || true)
+build_call_line=$(grep -nF '    build_package "$package"' <<<"$main_body" || true)
+[[ -n $remove_line && -n $build_call_line ]] ||
+  fail "the package build clears old archives before its package loop"
+remove_line=${remove_line%%:*}
+build_call_line=${build_call_line%%:*}
+(( remove_line < build_call_line )) ||
+  fail "the package build clears old archives before its package loop"
+pass "the package build clears old archives before its package loop"
+
 # The refresh runs from omarchy-reinstall-configs under set -e, so a machine
 # without limine must no-op rather than abort the seeding step.
 grep -F 'omarchy-cmd-missing limine' "$ROOT/bin/omarchy-refresh-limine" >/dev/null ||

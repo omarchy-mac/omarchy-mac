@@ -12,7 +12,15 @@ trap 'rm -rf "$test_tmp"' EXIT
 
 stub_bin="$test_tmp/bin"
 calls="$test_tmp/calls.log"
-mkdir -p "$stub_bin"
+swap_active="$test_tmp/dev-zram0.swap.active"
+test_root="$test_tmp/omarchy"
+first_home="$test_tmp/first-user-home"
+second_home="$test_tmp/second-user-home"
+migration_name=$(basename "$migration")
+first_marker="$first_home/.local/state/omarchy/migrations/$migration_name"
+second_marker="$second_home/.local/state/omarchy/migrations/$migration_name"
+mkdir -p "$stub_bin" "$test_root/migrations"
+cp "$migration" "$test_root/migrations/$migration_name"
 
 cat >"$stub_bin/omarchy-pkg-missing" <<'STUB'
 #!/bin/bash
@@ -28,11 +36,27 @@ STUB
 cat >"$stub_bin/systemctl" <<'STUB'
 #!/bin/bash
 printf 'systemctl %s\n' "$*" >>"$TEST_LOG"
+
+case "$1" in
+  is-active)
+    [[ $2 == "--quiet" && $3 == "dev-zram0.swap" && -e $TEST_SWAP_ACTIVE ]]
+    ;;
+  start)
+    [[ $2 == "systemd-zram-setup@zram0.service" ]]
+    touch "$TEST_SWAP_ACTIVE"
+    ;;
+esac
 STUB
 
 cat >"$stub_bin/sudo" <<'STUB'
 #!/bin/bash
+printf 'sudo %s\n' "$*" >>"$TEST_LOG"
 exec "$@"
+STUB
+
+cat >"$stub_bin/omarchy-notification-dismiss" <<'STUB'
+#!/bin/bash
+exit 0
 STUB
 
 chmod +x "$stub_bin"/*
@@ -50,7 +74,8 @@ assert_systemd_start_follows_reload() {
 
 run_migration() {
   : >"$calls"
-  PATH="$stub_bin:$PATH" TEST_LOG="$calls" \
+  rm -f "$swap_active"
+  PATH="$stub_bin:$PATH" TEST_LOG="$calls" TEST_SWAP_ACTIVE="$swap_active" \
     OMARCHY_TEST_ZRAM_MISSING="$1" bash -euo pipefail "$migration" >/dev/null
 }
 
@@ -73,3 +98,29 @@ grep -Fx 'systemctl start systemd-zram-setup@zram0.service' "$calls" >/dev/null 
   fail "the zram migration starts zram when the package is already installed"
 assert_systemd_start_follows_reload
 pass "the zram migration is idempotent"
+
+run_user_migrations() {
+  local home="$1" zram_missing="$2"
+
+  HOME="$home" OMARCHY_PATH="$test_root" PATH="$stub_bin:$PATH" \
+    TEST_LOG="$calls" TEST_SWAP_ACTIVE="$swap_active" \
+    OMARCHY_TEST_ZRAM_MISSING="$zram_missing" \
+    "$ROOT/bin/omarchy-migrate" >/dev/null
+}
+
+rm -f "$swap_active"
+: >"$calls"
+run_user_migrations "$first_home" 1
+[[ -e $swap_active ]] || fail "the first user activates zram" "$(cat "$calls")"
+[[ -e $first_marker ]] || fail "the first user records the zram migration"
+
+: >"$calls"
+run_user_migrations "$second_home" 0
+[[ -e $second_marker ]] || fail "the second user records the zram migration"
+! grep -q '^sudo ' "$calls" ||
+  fail "the second user does not repeat privileged zram activation" "$(cat "$calls")"
+! grep -Fx 'systemctl daemon-reload' "$calls" >/dev/null ||
+  fail "the second user does not reload systemd" "$(cat "$calls")"
+! grep -Fx 'systemctl start systemd-zram-setup@zram0.service' "$calls" >/dev/null ||
+  fail "the second user does not restart zram" "$(cat "$calls")"
+pass "a second user completes the migration without privileged activation"

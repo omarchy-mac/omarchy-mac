@@ -41,11 +41,25 @@ prompts_for_timezone() {
   [[ -e $WORK/notified ]]
 }
 
+does_not_prompt_when_executed() {
+  local timezone="$1"
+  rm -rf "$WORK/bin" "$WORK/notified"
+  mkdir -p "$WORK/bin"
+  printf '#!/bin/bash\necho %s\n' "$timezone" >"$WORK/bin/timedatectl"
+  printf '#!/bin/bash\ntouch "%s/notified"\n' "$WORK" >"$WORK/bin/omarchy-notification-send"
+  chmod +x "$WORK/bin"/*
+
+  PATH="$WORK/bin:$PATH" bash "$LEAF" >/dev/null 2>&1
+  [[ ! -e $WORK/notified ]]
+}
+
 check "a machine still on UTC is prompted" prompts_for_timezone UTC
 check "a machine with a real zone is left alone" \
   not prompts_for_timezone America/New_York
 check "an unset timezone is prompted" prompts_for_timezone ""
 check "another real zone is left alone" not prompts_for_timezone Europe/London
+check "a real zone is left alone when the leaf is executed" \
+  does_not_prompt_when_executed America/Los_Angeles
 
 echo
 echo "=== $pass checks passed, $failures failed ==="

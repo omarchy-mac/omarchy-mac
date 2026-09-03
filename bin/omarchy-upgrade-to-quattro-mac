@@ -166,20 +166,24 @@ validate_quattro_tree() {
 # it, every Quattro package that the ARM repo serves as a prebuilt binary
 # resolves to an hours-long AUR build instead -- quickshell-git's build even
 # fails outright on Wayland-only systems whose GL stack predates the upgrade
-# (#208). Mirrors install.sh's ensure_arm_package_repo; must run before
+# (#208). Even when the stanza is already present, refresh it: an old sync db
+# can still point at package files the ARM mirror has removed. Must run before
 # install_quattro_packages.
 ensure_arm_package_repo() {
-  grep -q '^\[omarchy-aarch64\]' /etc/pacman.conf && return 0
+  if ! grep -q '^\[omarchy-aarch64\]' /etc/pacman.conf; then
+    local block
+    block=$(sed -n '/^\[omarchy-aarch64\]/,/^Server[[:space:]]*=/p' \
+      "$checkout/default/pacman/pacman-stable.conf")
+    [[ -n $block ]] || fail "default/pacman/pacman-stable.conf has no [omarchy-aarch64] section."
 
-  local block
-  block=$(sed -n '/^\[omarchy-aarch64\]/,/^Server[[:space:]]*=/p' \
-    "$checkout/default/pacman/pacman-stable.conf")
-  [[ -n $block ]] || fail "default/pacman/pacman-stable.conf has no [omarchy-aarch64] section."
+    log "Adding the Omarchy ARM package repo"
+    printf '\n%s\n' "$block" | sudo tee -a /etc/pacman.conf >/dev/null
+  fi
 
-  log "Adding the Omarchy ARM package repo"
-  printf '\n%s\n' "$block" | sudo tee -a /etc/pacman.conf >/dev/null
-  sudo pacman -Sy --noconfirm >/dev/null 2>&1 ||
-    warn "Could not refresh package databases after adding the ARM repo."
+  log "Refreshing package databases for ARM packages"
+  if ! sudo pacman -Sy --noconfirm; then
+    fail "Could not refresh package databases. Fix the network or mirror configuration and retry the Quattro upgrade."
+  fi
 }
 
 # install.sh keeps the packages with no aarch64 build out of the set rather than
@@ -224,8 +228,10 @@ install_quattro_packages() {
     fi
   done < <(grep -vE '^\s*(#|$)' "$checkout/install/omarchy-base.packages")
 
-  # Apple GPUs cannot run gpu-screen-recorder; screen recording falls back to wf-recorder.
-  yay -S --needed --noconfirm wf-recorder </dev/null
+  # Apple GPUs cannot run gpu-screen-recorder; screen recording falls back to
+  # wf-recorder. Keep this optional like the default package pass: a missing
+  # recording backend must not leave the upgrade half-complete.
+  yay -S --needed --noconfirm wf-recorder </dev/null || skipped+=("wf-recorder")
 
   if (( ${#unbuildable[@]} )); then
     log "No aarch64 build is known, so these were not attempted: ${unbuildable[*]}"

@@ -21,8 +21,8 @@ timezone_needs_setting() {
   [[ -z $timezone || $timezone == "UTC" ]]
 }
 
-timezone_needs_setting || return 0
-
-omarchy-notification-send -u critical -g 󰥔 "Set your timezone" \
-  "This machine is on $(current_timezone). Click to choose yours." \
-  --exec "omarchy-launch-floating-terminal-with-presentation omarchy-cmd-tzupdate-enhanced"
+if timezone_needs_setting; then
+  omarchy-notification-send -u critical -g 󰥔 "Set your timezone" \
+    "This machine is on $(current_timezone). Click to choose yours." \
+    --exec "omarchy-launch-floating-terminal-with-presentation omarchy-cmd-tzupdate-enhanced"
+fi

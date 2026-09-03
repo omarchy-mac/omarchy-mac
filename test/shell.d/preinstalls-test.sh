@@ -17,6 +17,11 @@ for command in omarchy-webapp-remove-all omarchy-tui-remove-all omarchy-refresh-
   printf '#!/bin/bash\nexit 0\n' >"$mock_bin/$command"
 done
 
+cat >"$mock_bin/uname" <<'SH'
+#!/bin/bash
+[[ $1 == -m ]] && echo aarch64
+SH
+
 cat >"$mock_bin/gum" <<'SH'
 #!/bin/bash
 [[ $1 == confirm ]] && exit "${OMARCHY_TEST_CONFIRM:-0}"
@@ -58,10 +63,21 @@ dropped:  ${dropped[*]}"
 pass "Install and Remove Preinstalls cover the same packages"
 
 for package in "${restored[@]}"; do
-  printf '%s\n' "${shipped[@]}" | grep -qxF "$package" ||
-    fail "every preinstall is shipped in omarchy-base.packages" "$package is not shipped"
+  if [[ $package == obsidian-appimage ]]; then
+    [[ $(uname -m) == "aarch64" ]] ||
+      fail "the ARM-only Obsidian substitute is not used on x86"
+  else
+    printf '%s\n' "${shipped[@]}" | grep -qxF "$package" ||
+      fail "every preinstall is shipped in omarchy-base.packages" "$package is not shipped"
+  fi
 done
 pass "every preinstall is shipped in omarchy-base.packages"
+
+if [[ $(uname -m) == "aarch64" ]]; then
+  printf '%s\n' "${restored[@]}" | grep -qxF obsidian-appimage ||
+    fail "ARM preinstalls restore the installable Obsidian substitute"
+  pass "ARM preinstalls restore the installable Obsidian substitute"
+fi
 
 for package in omacut omacalc omawrite; do
   printf '%s\n' "${restored[@]}" | grep -qxF "$package" ||

@@ -755,11 +755,41 @@ check "no call site hardcodes a forge host" \
   [ "$(grep -c 'https://codeberg\.org' "$TOOL")" = "0" ]
 
 forge_persists() {
-  grep -qF 'SETUP_FORGE=$forge' "$TOOL" &&
+  grep -qF "printf 'SETUP_FORGE=%q\\n' \"\$forge\"" "$TOOL" &&
     grep -qF 'forge=${SETUP_FORGE:-$forge}' "$TOOL"
 }
 
 check "the forge survives a reboot in the conf file" forge_persists
+
+echo "=== saved answers are inert shell data ==="
+
+# The resume path sources /etc/omarchy-mac-setup.conf as root. An unescaped
+# --ref such as $(touch marker) used to become command substitution in that
+# file, so a value supplied to the first invocation ran on the next boot.
+conf_file=$work/setup.conf
+conf_marker=$work/conf-injected
+conf_is_safe() {
+  (
+    CONF=$conf_file
+    want_encrypt=1
+    username=owner
+    hostname=box
+    keymap=us
+    repo=owner/repo
+    ref="\$(touch \"$conf_marker\")"
+    forge=git.example.org
+
+    save_conf
+    [[ ! -e $conf_marker ]] || return 1
+
+    unset WANT_ENCRYPT SETUP_USER SETUP_HOSTNAME SETUP_KEYMAP SETUP_REPO SETUP_REF SETUP_FORGE
+    # shellcheck source=/dev/null
+    . "$CONF"
+    [[ ! -e $conf_marker && $SETUP_REF == "$ref" ]]
+  )
+}
+
+check "resume answers cannot execute shell syntax" conf_is_safe
 
 echo "=== questions and status read the machine, not the intent flag ==="
 
