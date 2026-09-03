@@ -152,7 +152,7 @@ main() {
   else
     (( ${#packages[@]} )) || packages=(quickshell-git)
     omarchy-hw-aarch64 ||
-      fail "building runs on Apple Silicon; use --from to publish packages built elsewhere"
+      fail "building runs on aarch64; use --from to publish packages built elsewhere"
     command -v makepkg >/dev/null || fail "makepkg is required (install base-devel)"
 
     local build_dir="$work_root/build"

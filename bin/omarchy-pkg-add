@@ -23,7 +23,11 @@ if omarchy-hw-aarch64; then
 fi
 
 if omarchy-pkg-missing "${packages[@]}"; then
-  sudo pacman -S --noconfirm --needed "${packages[@]}" || exit 1
+  if (( EUID == 0 )); then
+    pacman -S --noconfirm --needed "${packages[@]}" || exit 1
+  else
+    sudo pacman -S --noconfirm --needed "${packages[@]}" || exit 1
+  fi
 fi
 
 for pkg in "${packages[@]}"; do

@@ -3,11 +3,14 @@
 # binds bare XF86MonBrightness* and SHIFT+XF86MonBrightness*, so the top row has
 # to emit media keycodes without Fn for display and keyboard brightness to work.
 # hid_apple is the Apple keyboard driver. Writing this on a non-Apple x86
-# machine is a Mac-fork leak; only Apple Silicon (and T2, which also loads
-# hid_apple) should get fnmode=1.
-if omarchy-hw-apple-silicon || modinfo hid_apple &>/dev/null; then
-  if [[ ! -f /etc/modprobe.d/hid_apple.conf ]]; then
-    sudo mkdir -p /etc/modprobe.d
-    echo "options hid_apple fnmode=1" | sudo tee /etc/modprobe.d/hid_apple.conf >/dev/null
+# machine is a Mac-fork leak; only Apple Silicon (and T2, which actually loads
+# hid_apple) should get fnmode=1. Stock Arch kernels often *ship* the module,
+# so modinfo is not evidence it is in use.
+hid_apple_module="${OMARCHY_HID_APPLE_MODULE_PATH:-/sys/module/hid_apple}"
+hid_apple_conf="${OMARCHY_HID_APPLE_CONF_PATH:-/etc/modprobe.d/hid_apple.conf}"
+if omarchy-hw-apple-silicon || [[ -d $hid_apple_module ]]; then
+  if [[ ! -f $hid_apple_conf ]]; then
+    sudo mkdir -p "$(dirname "$hid_apple_conf")"
+    echo "options hid_apple fnmode=1" | sudo tee "$hid_apple_conf" >/dev/null
   fi
 fi
