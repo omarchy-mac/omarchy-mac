@@ -136,3 +136,27 @@ only a live session can prove.
 - **Assert the invariant, not the snapshot.** Config tests pin the property a
   test is named for (this widget stays adjacent to that one) rather than whole
   structures, so unrelated churn does not fail them.
+
+## CI
+
+GitHub Actions (`.github/workflows/main.yml`) runs on every push and pull request. Three jobs run in parallel on `ubuntu-24.04`:
+
+- **syntax** — shebang-aware parse of `bin/omarchy-*`, `bash -n` on tracked `*.sh`, and shellcheck (`--shell=bash -S error`, excluding `migrations/` and `test/`)
+- **test** — `./test/all` (`./test/cli` and `./test/shell`), with `omacom/omarchy-pkgs` checked out for PKGBUILD coverage
+- **mac** — `./tests/all` (Mac-specific suites; root/loop rehearsals skip without privileges)
+
+The graphical acceptance suite is not part of this workflow. Compositor-dependent shell tests skip on the headless runner.
+
+## Install machine (self-hosted)
+
+`.github/workflows/install-vm.yml` runs `install.sh` inside an isolated Arch Linux ARM machine on a self-hosted Apple Silicon runner. GitHub-hosted ARM VMs cannot do this: they have no nested KVM, and Asahi Alarm will not boot in QEMU. The host kernel is 16k pages, so the harness uses `systemd-nspawn` (same kernel a real Mac install runs on) rather than a 4k QEMU guest.
+
+It is `workflow_dispatch` plus a nightly schedule, never `pull_request`. A public-repo self-hosted runner must not execute fork PRs. Required labels and disk/sudo notes: [`docs/runner-requirements.md`](runner-requirements.md).
+
+Register this machine once, from a terminal:
+
+```bash
+./test/vm/setup-github-runner
+```
+
+That creates a `github-runner` user with passwordless sudo, installs the Actions runner, and starts it. Then run **Install VM** from the Actions tab. The harness is `./test/vm/run-install` and can be invoked the same way locally with sudo.

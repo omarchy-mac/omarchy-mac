@@ -117,8 +117,21 @@ install_build_dependencies() {
   sudo pacman -S --needed --noconfirm "${missing[@]}"
 }
 
+remove_old_packages() {
+  local artifact
+
+  # This directory is the installer hand-off, not a package cache. A retry
+  # after PKGBUILDs changed must not mix the previous build with this one.
+  for artifact in "$output_dir"/*.pkg.tar.*; do
+    [[ -f $artifact ]] || continue
+    rm -f -- "$artifact"
+  done
+}
+
 build_package() {
   local package="$1" pkgbuild_source="$2" build_dir="$3"
+  local artifact
+  local -a built=()
 
   log "Building $package"
   rm -rf "$build_dir/$package"
@@ -139,7 +152,14 @@ build_package() {
       makepkg --force --noconfirm --nodeps --skipinteg
   )
 
-  mv "$build_dir/$package"/*.pkg.tar.* "$output_dir/"
+  # A configured makepkg signer leaves detached .sig files beside the archive;
+  # pacman -U accepts package archives, not those signatures.
+  for artifact in "$build_dir/$package"/*.pkg.tar.*; do
+    [[ -f $artifact && $artifact != *.sig ]] || continue
+    built+=("$artifact")
+  done
+  (( ${#built[@]} )) || fail "$package produced no package archive"
+  mv -- "${built[@]}" "$output_dir/"
 }
 
 main() {
@@ -164,6 +184,7 @@ main() {
   trap remove_build_dir EXIT
 
   mkdir -p "$output_dir" "$source_cache"
+  remove_old_packages
   for package in "${packages[@]}"; do
     build_package "$package" "$pkgbuild_source" "$build_dir"
   done

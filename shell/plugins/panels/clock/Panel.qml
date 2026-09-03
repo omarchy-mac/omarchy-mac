@@ -239,9 +239,11 @@ Panel {
     owner: root.barIdentity
     bar: root.bar
     open: root.opened
-    centerOnBar: true
+    // Anchor the calendar under the clock rather than the middle of the bar,
+    // so it follows wherever the widget is placed.
+    centerOnBar: false
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(560))
+    contentWidth: panel.fittedContentWidth(Style.space(500))
     contentHeight: panel.fittedContentHeight(calendarColumn.implicitHeight)
 
     PanelKeyCatcher {
@@ -311,6 +313,7 @@ Panel {
 
               Text {
                 id: heroDate
+                textFormat: Text.PlainText
                 anchors.verticalCenter: parent.verticalCenter
                 text: Qt.formatDate(root.today, "MMMM d")
                 color: heroMouse.containsMouse
@@ -413,6 +416,7 @@ Panel {
 
               Text {
                 id: yearLabel
+                textFormat: Text.PlainText
                 visible: !root.editingLife
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
@@ -425,6 +429,7 @@ Panel {
 
               Text {
                 id: yearPercent
+                textFormat: Text.PlainText
                 visible: !root.editingLife
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
@@ -485,6 +490,7 @@ Panel {
 
               Text {
                 id: lifePercent
+                textFormat: Text.PlainText
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.lifeDonePercent + "%"
@@ -608,6 +614,7 @@ Panel {
                   model: root.weekdays
 
                   Text {
+                    textFormat: Text.PlainText
                     required property var modelData
                     width: root.cellWidth
                     height: Style.space(16)
@@ -631,6 +638,7 @@ Panel {
                   spacing: root.cellSpacing
 
                   Text {
+                    textFormat: Text.PlainText
                     width: root.weekColumnWidth
                     height: root.cellHeight
                     horizontalAlignment: Text.AlignHCenter
@@ -662,6 +670,7 @@ Panel {
                       border.color: Style.normalBorderFor(root.contentForeground, Color.accent)
 
                       Text {
+                        textFormat: Text.PlainText
                         anchors.centerIn: parent
                         text: modelData.day
                         color: modelData.inMonth
@@ -707,6 +716,7 @@ Panel {
 
               Text {
                 id: monthLabel
+                textFormat: Text.PlainText
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
                 // Fixed width so the chevrons hold still between a

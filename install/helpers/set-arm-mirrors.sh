@@ -109,7 +109,7 @@ auto_detect_country() {
 # Test mirror connectivity function
 test_mirror_connectivity() {
   local mirror_url="$1"
-  local test_url="${mirror_url//\$arch\$repo/aarch64/core}"
+  local test_url="${mirror_url//\$arch\/\$repo/aarch64\/core}"
 
   if [[ $VERBOSE -eq 1 ]]; then
     echo "[DEBUG] Testing connectivity to: $test_url"

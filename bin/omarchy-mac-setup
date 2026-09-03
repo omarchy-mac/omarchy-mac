@@ -328,16 +328,19 @@ load_conf() {
 }
 
 save_conf() {
-  cat >"$CONF" <<EOF
-# Written by omarchy-mac-setup; delete it to stop the guided install.
-WANT_ENCRYPT=$want_encrypt
-SETUP_USER=$username
-SETUP_HOSTNAME=$hostname
-SETUP_KEYMAP=$keymap
-SETUP_REPO=$repo
-SETUP_REF=$ref
-SETUP_FORGE=$forge
-EOF
+  # This file is sourced as root on the next boot. Keep every answer shell-safe,
+  # including the repo/ref/forge flags, which are intentionally user-configurable
+  # and may contain characters that are meaningful to the shell.
+  {
+    printf '# Written by omarchy-mac-setup; delete it to stop the guided install.\n'
+    printf 'WANT_ENCRYPT=%q\n' "$want_encrypt"
+    printf 'SETUP_USER=%q\n' "$username"
+    printf 'SETUP_HOSTNAME=%q\n' "$hostname"
+    printf 'SETUP_KEYMAP=%q\n' "$keymap"
+    printf 'SETUP_REPO=%q\n' "$repo"
+    printf 'SETUP_REF=%q\n' "$ref"
+    printf 'SETUP_FORGE=%q\n' "$forge"
+  } >"$CONF"
   chmod 600 "$CONF"
 }
 
@@ -427,6 +430,7 @@ print_help() {
 # anyone logging in. Conflicting with the getty keeps the two off each other's
 # console.
 install_unit() {
+  # omarchy:heredoc-expands paths=none -- $CONF and $SELF are hardcoded /etc and /usr/local paths
   cat >"$UNIT" <<EOF
 [Unit]
 Description=Omarchy Mac guided setup

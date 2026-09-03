@@ -1,0 +1,103 @@
+name: Install VM
+
+# Isolated install.sh on a self-hosted Apple Silicon runner (systemd-nspawn).
+#
+# Triggers are workflow_dispatch and a nightly schedule only — never
+# pull_request. This repo is public; a self-hosted runner on a desktop must
+# not execute untrusted fork code. The job-level `if` is a second fence so a
+# fork that copies this file still no-ops unless it also has our runner.
+#
+# Required runner labels (GitHub matching is case-insensitive):
+#   self-hosted, linux (shown as Linux), ARM64
+# Extra label we set at registration: kvm
+# Capabilities: systemd-nspawn, passwordless sudo, network, several GB free.
+# See docs/runner-requirements.md.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * *"
+
+concurrency:
+  group: install-vm
+  # A new dispatch or nightly should not stack two full installs on a 34G disk.
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
+jobs:
+  install:
+    name: install.sh on Arch Linux ARM
+    # Skip on forks even if someone re-adds pull_request. This is not redundant
+    # with the trigger list: it is the fork fence.
+    if: github.repository == 'omarchy-mac/omarchy-mac'
+    runs-on: [self-hosted, linux, ARM64]
+    timeout-minutes: 120
+    env:
+      INSTALL_VM_ROOT: /var/tmp/omarchy-install-vm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Diagnostics
+        run: |
+          uname -a
+          id
+          getconf PAGESIZE
+          df -h
+          free -m
+          command -v systemd-nspawn
+          command -v sudo
+
+      - name: Pre-check run-install
+        run: |
+          if [[ ! -f ./test/vm/run-install ]]; then
+            echo "run-install not found at ./test/vm/run-install" >&2
+            exit 1
+          fi
+          if [[ ! -x ./test/vm/run-install ]]; then
+            echo "run-install exists but is not executable" >&2
+            exit 1
+          fi
+          echo "pre-check: ./test/vm/run-install is executable"
+
+      - name: Prepare log directory
+        run: |
+          sudo mkdir -p "$INSTALL_VM_ROOT/logs"
+          sudo chown "$(id -u):$(id -g)" "$INSTALL_VM_ROOT" "$INSTALL_VM_ROOT/logs"
+
+      - name: Run isolated install
+        run: |
+          set +e
+          sudo --preserve-env=HOME ./test/vm/run-install
+          status=$?
+          set -e
+          printf '%s\n' "$status" >"$INSTALL_VM_ROOT/logs/exit_code"
+          if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then
+            if (( status == 0 )); then
+              printf 'install harness exited 0\n' >>"$GITHUB_STEP_SUMMARY"
+            else
+              printf 'install harness failed with exit %s. See the install-vm-logs artifact.\n' "$status" >>"$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          exit "$status"
+
+      - name: Compress logs
+        if: always()
+        run: |
+          mkdir -p "$INSTALL_VM_ROOT/logs"
+          tar -czf "$INSTALL_VM_ROOT/logs.tar.gz" -C "$INSTALL_VM_ROOT" logs
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-vm-logs
+          path: /var/tmp/omarchy-install-vm/logs.tar.gz
+          retention-days: 7
+          if-no-files-found: ignore
