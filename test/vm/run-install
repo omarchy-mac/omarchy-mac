@@ -47,7 +47,7 @@ as_root true || fail "root (or passwordless sudo) is required to spawn the machi
 
 mkdir -p "$CACHE" "$WORK/logs"
 as_root rm -rf "$WORK/root" "$WORK/overlay"
-as_root mkdir -p "$WORK/root" "$WORK/overlay/upper" "$WORK/overlay/work"
+as_root mkdir -p "$WORK/root" "$WORK/overlay/upper"
 trap cleanup EXIT
 
 tarball="$CACHE/ArchLinuxARM-aarch64-latest.tar.gz"
@@ -69,7 +69,8 @@ nspawn() {
     --machine="$MACHINE" \
     --register=no \
     --resolv-conf=bind-host \
-    --overlay="$ROOT:$WORK/overlay/upper:$WORK/overlay/work:/src/omarchy" \
+    # Three fields: lower:upper:dest. nspawn derives overlay workdir as a sibling of upper.
+    --overlay="$ROOT:$WORK/overlay/upper:/src/omarchy" \
     --console=pipe \
     "$@"
 }

@@ -61,10 +61,8 @@ jobs:
             exit 1
           fi
           if [[ ! -x ./test/vm/run-install ]]; then
-            chmod +x ./test/vm/run-install || {
-              echo "run-install not found or not executable" >&2
-              exit 1
-            }
+            echo "run-install exists but is not executable" >&2
+            exit 1
           fi
           echo "pre-check: ./test/vm/run-install is executable"
 
@@ -76,8 +74,8 @@ jobs:
       - name: Run isolated install
         run: |
           set +e
-          sudo --preserve-env=HOME ./test/vm/run-install 2>&1 | tee "$INSTALL_VM_ROOT/logs/install.log"
-          status=${PIPESTATUS[0]}
+          sudo --preserve-env=HOME ./test/vm/run-install
+          status=$?
           set -e
           printf '%s\n' "$status" >"$INSTALL_VM_ROOT/logs/exit_code"
           if [[ -n ${GITHUB_STEP_SUMMARY:-} ]]; then

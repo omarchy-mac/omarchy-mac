@@ -29,11 +29,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck
 
-      - name: Syntax-check bin/omarchy-*
+      - name: Syntax-check bin/omarchy, bin/omarchy-*, test/vm/*
         run: |
           failed=()
           shopt -s nullglob
-          for f in bin/omarchy-*; do
+          for f in bin/omarchy bin/omarchy-* test/vm/*; do
             [[ -f $f ]] || continue
             if head -1 "$f" | grep -q python; then
               python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$f" || failed+=("$f")
@@ -85,7 +85,7 @@ jobs:
       - name: Checkout omarchy-pkgs
         uses: actions/checkout@v4
         with:
-          repository: omacom-io/omarchy-pkgs
+          repository: omacom/omarchy-pkgs
           path: omarchy-pkgs
           persist-credentials: false
 
