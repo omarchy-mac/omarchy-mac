@@ -25,6 +25,14 @@ for config in "$ROOT"/default/pacman/pacman*.conf; do
 done
 pass "x86 pacman configs match upstream"
 
+grep -qF 'Server = https://pkgs.omarchy.org/stable/$arch' "$ROOT/default/pacman/pacman-stable.conf" ||
+  fail "x86 stable pacman config points at the stable Omarchy repo"
+grep -qF 'Server = https://pkgs.omarchy.org/rc/$arch' "$ROOT/default/pacman/pacman-rc.conf" ||
+  fail "x86 rc pacman config points at the rc Omarchy repo, not edge"
+grep -qF 'Server = https://pkgs.omarchy.org/edge/$arch' "$ROOT/default/pacman/pacman-edge.conf" ||
+  fail "x86 edge pacman config points at the edge Omarchy repo"
+pass "x86 pacman channel configs keep their upstream repo URLs"
+
 # aarch64 configs live under default/pacman/aarch64/ so they cannot leak into
 # an x86 refresh. They pin aarch64, offer [omarchy-aarch64], and never point
 # at the x86-only pkgs.omarchy.org repo.
@@ -164,4 +172,8 @@ set -e
 grep -qF 'lib32-nvidia-utils' "$test_tmp/install.log" ||
   fail "x86 pkg-add passes the missing package to pacman" "$(cat "$test_tmp/install.log")"
 pass "x86 pkg-add fails on missing packages, matching upstream"
+
+grep -qF 'EUID == 0' "$ROOT/bin/omarchy-pkg-add" ||
+  fail "omarchy-pkg-add keeps the upstream root path that calls pacman without sudo"
+pass "omarchy-pkg-add keeps the upstream EUID pacman path"
 

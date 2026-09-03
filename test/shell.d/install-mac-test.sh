@@ -21,6 +21,22 @@ pass "x86 install.sh points at the Omarchy ISO"
 [[ -x $build_script ]] || fail "the Apple Silicon package build script ships and is executable"
 pass "the Apple Silicon install scripts ship and are executable"
 
+# After the move from repo-root install.sh, checkout must be the repo root
+# (two levels above install/aarch64/), not install/aarch64 itself.
+grep -qF '/../..' "$install_script" ||
+  fail "the Apple Silicon installer walks up to the repo root for checkout"
+script_dir=$(cd -- "$(dirname -- "$install_script")" && pwd)
+checkout=$(cd -- "$script_dir/../.." && pwd)
+[[ $checkout == "$ROOT" ]] ||
+  fail "install/aarch64/install.sh is two levels below the repo root" "resolved: $checkout"
+[[ -x $checkout/bin/omarchy-hw-arch ]] ||
+  fail "checkout contains bin/omarchy-hw-arch"
+[[ -x $checkout/build-packages.sh ]] ||
+  fail "checkout contains build-packages.sh"
+[[ -f $checkout/default/pacman/aarch64/pacman-stable.conf ]] ||
+  fail "checkout contains default/pacman/aarch64/pacman-stable.conf"
+pass "the Apple Silicon installer resolves checkout to the repo root"
+
 # Quattro renamed the setup entry points once already, and set -e turns a call
 # to a command that no longer ships into a half-finished install.
 while read -r command_name; do
