@@ -8,53 +8,53 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/base-test.sh"
 # assert the repo's aarch64 surface without needing Asahi hardware. The dynamic
 # checks at the bottom simulate aarch64 with stubbed commands.
 
-# Every pacman.conf the repo ships must pin Architecture = aarch64. A config
-# that omits it inherits the machine's uname, which is right on a Mac today but
-# silently wrong the moment upstream x86 defaults are synced back in.
+# x86 configs at default/pacman/ must stay byte-compatible with upstream:
+# Architecture = auto and the x86 [omarchy] repo. Pinning aarch64 here would
+# break every x86 install the moment this tree is merged.
 for config in "$ROOT"/default/pacman/pacman*.conf; do
-  grep -qF 'Architecture = aarch64' "$config" ||
-    fail "every shipped pacman config pins aarch64" "missing in: $(basename "$config")"
+  grep -qF 'Architecture = auto' "$config" ||
+    fail "x86 pacman configs keep Architecture = auto" "missing in: $(basename "$config")"
+  grep -qF '[omarchy]' "$config" ||
+    fail "x86 pacman configs offer the upstream [omarchy] repo" "missing in: $(basename "$config")"
+  grep -qF 'pkgs.omarchy.org' "$config" ||
+    fail "x86 pacman configs point at pkgs.omarchy.org" "missing in: $(basename "$config")"
+  grep -qF 'Architecture = aarch64' "$config" &&
+    fail "x86 pacman configs must not pin aarch64" "pinned in: $(basename "$config")"
+  grep -qF '[omarchy-aarch64]' "$config" &&
+    fail "x86 pacman configs must not offer the ARM repo" "in: $(basename "$config")"
 done
-pass "every shipped pacman config pins aarch64"
+pass "x86 pacman configs match upstream"
 
-# Omarchy's own package repo is x86_64 only (docs/upgrade-to-quattro.md). Any
-# config that still points at it makes pacman fetch aarch64 packages from an
-# x86 repo and breaks every system upgrade.
-leaky=()
-while read -r config; do
-  [[ -n $config ]] || continue
-  leaky+=("$(basename "$config")")
-done < <(grep -l 'pkgs\.omarchy\.org' "$ROOT"/default/pacman/pacman*.conf 2>/dev/null || true)
-(( ${#leaky[@]} == 0 )) ||
-  fail "no shipped pacman config points at the x86 Omarchy package repo" \
-    "still x86: ${leaky[*]}"
-pass "no shipped pacman config points at the x86 Omarchy package repo"
+# aarch64 configs live under default/pacman/aarch64/ so they cannot leak into
+# an x86 refresh. They pin aarch64, offer [omarchy-aarch64], and never point
+# at the x86-only pkgs.omarchy.org repo.
+for config in "$ROOT"/default/pacman/aarch64/pacman*.conf; do
+  grep -qF 'Architecture = aarch64' "$config" ||
+    fail "every aarch64 pacman config pins aarch64" "missing in: $(basename "$config")"
+  grep -qF '[omarchy-aarch64]' "$config" ||
+    fail "every aarch64 pacman config offers the Omarchy ARM repo" "missing in: $(basename "$config")"
+  grep -qF 'pkgs.omarchy.org' "$config" &&
+    fail "aarch64 pacman configs must not point at the x86 Omarchy package repo" \
+      "still x86: $(basename "$config")"
+done
+pass "aarch64 pacman configs pin ARM and offer [omarchy-aarch64]"
 
-# Same for the bundled mirrorlists: an Omarchy mirror serves x86_64 only, so a
-# mirrorlist that reaches one would leave pacman querying an x86 repo for
-# aarch64 packages.
+# ARM mirrorlists stay in the aarch64 tree. The x86 tree is allowed to name
+# omarchy.org; the aarch64 tree is not.
 leaky=()
 while read -r file; do
   [[ -n $file ]] || continue
-  leaky+=("$(basename "$file")")
-done < <(grep -l 'omarchy\.org' "$ROOT"/default/pacman/mirrorlist* 2>/dev/null || true)
+  leaky+=("${file#"$ROOT"/}")
+done < <(grep -l 'omarchy\.org' "$ROOT"/default/pacman/aarch64/mirrorlist* 2>/dev/null || true)
 (( ${#leaky[@]} == 0 )) ||
-  fail "no shipped mirrorlist points at an x86 Omarchy mirror" "still x86: ${leaky[*]}"
-pass "no shipped mirrorlist points at an x86 Omarchy mirror"
+  fail "no aarch64 mirrorlist points at an x86 Omarchy mirror" "still x86: ${leaky[*]}"
+pass "no aarch64 mirrorlist points at an x86 Omarchy mirror"
 
-# Every aarch64 pacman config anywhere in the repo — not just default/pacman/ —
-# has to offer [omarchy-aarch64], or herdr falls back to a multi-hour zig build
-# that aarch64 rejects (install.sh:116).
-missing_arm=()
-for config in "$ROOT"/config/*.conf "$ROOT"/default/pacman/*.conf; do
-  [[ -f $config ]] || continue
-  grep -qF 'Architecture = aarch64' "$config" || continue
-  grep -qF '[omarchy-aarch64]' "$config" || missing_arm+=("${config#"$ROOT"/}")
-done
-(( ${#missing_arm[@]} == 0 )) ||
-  fail "every aarch64 pacman config offers the Omarchy ARM repo" \
-    "missing [omarchy-aarch64]: ${missing_arm[*]}"
-pass "every aarch64 pacman config offers the Omarchy ARM repo"
+# refresh-pacman selects the tree from omarchy-hw-aarch64 rather than shipping
+# a single aarch64-only pacman.conf.
+grep -qF 'omarchy-hw-aarch64' "$ROOT/bin/omarchy-refresh-pacman" ||
+  fail "omarchy-refresh-pacman selects the pacman tree by architecture"
+pass "omarchy-refresh-pacman selects the pacman tree by architecture"
 
 # Paths must derive from OMARCHY_PATH (AGENTS.md); a hardcoded HOME breaks once
 # the checkout is wired to /usr/share/omarchy.
@@ -67,7 +67,7 @@ pass "the mirrorlist refresh derives its source from OMARCHY_PATH"
 # must refuse to run on Apple Silicon (the inverse of the guard in
 # omarchy-upgrade-to-quattro-mac). It is not safe to execute here — it writes
 # /etc through sudo — so assert the guard statically instead.
-grep -qF 'uname -m' "$ROOT/bin/omarchy-upgrade-to-quattro" &&
+grep -qE 'omarchy-hw-aarch64|uname -m' "$ROOT/bin/omarchy-upgrade-to-quattro" &&
   grep -qF 'aarch64' "$ROOT/bin/omarchy-upgrade-to-quattro" ||
   fail "the upstream x86 upgrade fences itself off on Apple Silicon"
 pass "the upstream x86 upgrade fences itself off on Apple Silicon"
@@ -126,6 +126,10 @@ write_stub sudo '#!/bin/bash
 "$@"
 '
 
+write_stub omarchy-hw-aarch64 '#!/bin/bash
+exit 0
+'
+
 ARM_ONLY_PKG="ripgrep" \
   PKG_TEST_STATE="$test_tmp/installed" \
   PKG_TEST_LOG="$test_tmp/install.log" \
@@ -139,3 +143,25 @@ grep -qF 'ripgrep' "$test_tmp/install.log" ||
 ! grep -qF 'lib32-nvidia-utils' "$test_tmp/install.log" ||
   fail "the package helper never passes an unavailable package to pacman" "$(cat "$test_tmp/install.log")"
 pass "the package helper skips x86-only packages instead of failing the install"
+
+# On x86 the filter is off: a missing package is passed to pacman and the
+# helper fails, matching upstream omarchy-pkg-add.
+write_stub omarchy-hw-aarch64 '#!/bin/bash
+exit 1
+'
+rm -f "$test_tmp/installed" "$test_tmp/install.log" "$test_tmp/skip.log"
+set +e
+ARM_ONLY_PKG="ripgrep" \
+  PKG_TEST_STATE="$test_tmp/installed" \
+  PKG_TEST_LOG="$test_tmp/install.log" \
+  PATH="$stub_bin:$PATH" \
+  "$ROOT/bin/omarchy-pkg-add" ripgrep lib32-nvidia-utils >/dev/null 2>"$test_tmp/skip.log"
+x86_status=$?
+set -e
+(( x86_status != 0 )) || fail "x86 pkg-add fails when a package is missing"
+! grep -qF "Skipping 'lib32-nvidia-utils'" "$test_tmp/skip.log" ||
+  fail "x86 pkg-add does not skip missing packages" "$(cat "$test_tmp/skip.log")"
+grep -qF 'lib32-nvidia-utils' "$test_tmp/install.log" ||
+  fail "x86 pkg-add passes the missing package to pacman" "$(cat "$test_tmp/install.log")"
+pass "x86 pkg-add fails on missing packages, matching upstream"
+
