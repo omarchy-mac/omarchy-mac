@@ -228,8 +228,10 @@ install_quattro_packages() {
     fi
   done < <(grep -vE '^\s*(#|$)' "$checkout/install/omarchy-base.packages")
 
-  # Apple GPUs cannot run gpu-screen-recorder; screen recording falls back to wf-recorder.
-  yay -S --needed --noconfirm wf-recorder </dev/null
+  # Apple GPUs cannot run gpu-screen-recorder; screen recording falls back to
+  # wf-recorder. Keep this optional like the default package pass: a missing
+  # recording backend must not leave the upgrade half-complete.
+  yay -S --needed --noconfirm wf-recorder </dev/null || skipped+=("wf-recorder")
 
   if (( ${#unbuildable[@]} )); then
     log "No aarch64 build is known, so these were not attempted: ${unbuildable[*]}"

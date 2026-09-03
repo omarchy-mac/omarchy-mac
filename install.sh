@@ -91,7 +91,7 @@ ensure_package_sources() {
   else
     log "Cloning the PKGBUILD checkout"
     mkdir -p "$cache_dir"
-    git clone --depth 1 https://github.com/omacom-io/omarchy-pkgs.git "$pkgs_checkout"
+    git clone --depth 1 https://github.com/omacom/omarchy-pkgs.git "$pkgs_checkout"
   fi
 
   export OMARCHY_PKGS_PATH="$pkgs_checkout"
@@ -105,7 +105,12 @@ build_omarchy_packages() {
 install_omarchy_packages() {
   log "Installing the Omarchy packages"
 
-  local built=("$package_output"/*.pkg.tar.*)
+  local artifact
+  local -a built=()
+  for artifact in "$package_output"/*.pkg.tar.*; do
+    [[ -f $artifact && $artifact != *.sig ]] || continue
+    built+=("$artifact")
+  done
   (( ${#built[@]} )) || fail "No packages were built in $package_output."
   sudo pacman -U --needed --noconfirm "${built[@]}"
 
