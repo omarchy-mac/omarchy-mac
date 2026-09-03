@@ -4,8 +4,18 @@ set -euo pipefail
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/base-test.sh"
 
-install_script="$ROOT/install.sh"
+install_script="$ROOT/install/aarch64/install.sh"
 build_script="$ROOT/build-packages.sh"
+
+grep -qF 'install/aarch64/install.sh' "$ROOT/install.sh" ||
+  fail "root install.sh dispatches aarch64 to the Apple Silicon installer"
+pass "root install.sh dispatches aarch64 to the Apple Silicon installer"
+
+x86_install=$(OMARCHY_UNAME_M=x86_64 bash "$ROOT/install.sh" 2>&1) &&
+  fail "x86 install.sh must not succeed without the ISO pipeline" || true
+[[ $x86_install == *omarchy.org* ]] ||
+  fail "x86 install.sh points at the Omarchy ISO" "$x86_install"
+pass "x86 install.sh points at the Omarchy ISO"
 
 [[ -x $install_script ]] || fail "the Apple Silicon installer ships and is executable"
 [[ -x $build_script ]] || fail "the Apple Silicon package build script ships and is executable"
