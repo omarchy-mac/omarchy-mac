@@ -204,6 +204,9 @@ main() {
   fi
 }
 
-if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+# Piped through `curl | bash` there is no BASH_SOURCE at all: that is an
+# execution, not a sourcing, and it must run. Sourced by the tests, the two
+# differ and nothing runs.
+if [[ -z ${BASH_SOURCE[0]:-} || ${BASH_SOURCE[0]} == "$0" ]]; then
   main "$@"
 fi
