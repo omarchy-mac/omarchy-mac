@@ -48,7 +48,7 @@ refresh_boot() {
   # The kernel package's pacman hooks already ran mkinitcpio and update-m1n1
   # for the newest module directory. GRUB is what still has to learn about the
   # new /boot/vmlinuz-linux-asahi-wip.
-  if command -v grub-mkconfig >/dev/null; then
+  if omarchy-cmd-present grub-mkconfig; then
     log "Regenerating the GRUB menu"
     sudo grub-mkconfig -o /boot/grub/grub.cfg
   fi
