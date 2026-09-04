@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# omarchy:summary=Install what the Touch Bar Now Playing app needs, then start it
+# omarchy:examples=omarchy install touchbar-now-playing
+
+echo "Installing the Touch Bar Now Playing app's dependencies..."
+omarchy-pkg-add cava python-cairo python-gobject
+
+echo "Starting Now Playing on the Touch Bar..."
+setsid omarchy-touchbar-now-playing >/dev/null 2>&1 &
+
+echo "Super + Ctrl + M toggles it. Tap F1-F12 on the Touch Bar to get the keys back."
