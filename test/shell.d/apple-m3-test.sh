@@ -36,16 +36,35 @@ pass "the kernel branch is a build-time choice"
 ! grep -q '^conflicts=' "$pkgbuild" || fail "linux-asahi-wip installs alongside linux-asahi"
 pass "linux-asahi-wip installs alongside linux-asahi"
 
-# The macOS installer wrapper: bash 3.2 syntax, and the one thing it does to
-# the installer data is add 14.8.3 wherever it is missing.
+# The macOS installer wrapper: bash 3.2 syntax; on an M3 it swaps in Asahi's
+# own installer package when Asahi Alarm's has no M3 device table, turns on
+# the expert-mode question, and adds 14.8.3 to the installer data wherever it
+# is missing.
 bash -n "$installer" || fail "omarchy-mac-asahi-install parses"
 pass "omarchy-mac-asahi-install parses"
 ! grep -qE '\$\{[a-z_]+,,\}|declare -A' "$installer" ||
   fail "omarchy-mac-asahi-install stays within macOS bash 3.2"
 pass "omarchy-mac-asahi-install stays within macOS bash 3.2"
+grep -q 'cdn.asahilinux.org/installer' "$installer" ||
+  fail "omarchy-mac-asahi-install can fall back to Asahi's own installer package"
+pass "omarchy-mac-asahi-install can fall back to Asahi's own installer package"
+grep -q 'export EXPERT=1' "$installer" ||
+  fail "omarchy-mac-asahi-install turns on the expert-mode question for an M3"
+pass "omarchy-mac-asahi-install turns on the expert-mode question for an M3"
 
 test_tmp=$(mktemp -d)
 trap 'rm -rf "$test_tmp"' EXIT
+
+# shellcheck source=/dev/null
+source "$installer"
+
+mkdir -p "$test_tmp/old" "$test_tmp/new"
+printf '    0x6022: "13.4",     # T6022, M2 Ultra\n    "j180dap":  Device("13.4", False),\n' >"$test_tmp/old/main.py"
+printf '    0x6030: "14.8.3",   # T6030, M3 Pro\n    "j516sap":  Device("14.8.3", True),\n' >"$test_tmp/new/main.py"
+! installer_knows_m3 "$test_tmp/old" || fail "an installer whose device table ends at M2 is recognised as such"
+pass "an installer whose device table ends at M2 is recognised as such"
+installer_knows_m3 "$test_tmp/new" || fail "an installer with the M3 device table is recognised"
+pass "an installer with the M3 device table is recognised"
 
 cat >"$test_tmp/data.json" <<'JSON'
 {

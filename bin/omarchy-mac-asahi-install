@@ -10,15 +10,25 @@
 # other command in this repo, and the one the stock Asahi Alarm bootstrap gets
 # wrong for M3 Macs.
 #
-# The installer itself knows M3 (T8122, T6030, T6031, T6034) and will install
-# on one in expert mode, using the macOS 14.8.3 firmware. What stops it is
-# installer_data.json: every Asahi Alarm image lists the firmware versions it
-# was tested with, and none of them lists 14.8.3, so on an M3 the installer
-# finds no firmware the image accepts and stops with "Your system firmware is
-# too old". The Asahi developers' own instruction for M3 testing is to add
-# "14.8.3" to that list by hand. This script does that and nothing else: same
-# installer package, same images, same URLs as the official bootstrap, with the
-# one line the M3 needs.
+# Two things stop the stock bootstrap on an M3, and this script undoes both:
+#
+# 1. The installer package. Asahi's own installer (asahi-installer 0.9.0 and
+#    later) lists every M3 machine (T8122, T6030, T6031, T6034) as expert-only
+#    against the macOS 14.8.3 firmware. Asahi Alarm ships its own build of that
+#    installer, and as of 0.8.4 it is an older one whose device table ends at
+#    M2: on an M3 it exits with "This device is not supported yet!" before it
+#    asks anything. The installer is data-driven, so Asahi's package runs
+#    unchanged against Asahi Alarm's images; when Asahi Alarm's package lacks
+#    the M3 table, this script fetches Asahi's from cdn.asahilinux.org and
+#    points it at asahi-alarm.org for the image list and the images.
+#
+# 2. installer_data.json. Every Asahi Alarm image lists the firmware versions
+#    it was tested with, and none lists 14.8.3, so even an M3-aware installer
+#    finds no firmware the image accepts. The Asahi developers' own instruction
+#    for M3 testing is to add "14.8.3" to that list by hand; this script does.
+#
+# The expert-mode question only appears when EXPERT is set in the environment,
+# and an M3 install is refused without it, so the script sets it on an M3.
 #
 # Runs under macOS's bash 3.2, so no associative arrays and no case-changing expansions.
 
@@ -28,6 +38,8 @@ VERSION_FLAG="https://asahi-alarm.org/latest"
 INSTALLER_BASE="https://asahi-alarm.org/"
 INSTALLER_DATA="https://asahi-alarm.org/installer_data.json"
 REPO_BASE="https://asahi-alarm.org/"
+ASAHI_VERSION_FLAG="https://cdn.asahilinux.org/installer/latest"
+ASAHI_INSTALLER_BASE="https://cdn.asahilinux.org/installer"
 M3_FIRMWARE="14.8.3"
 TMP=/tmp/asahi-install
 
@@ -50,6 +62,14 @@ mac_generation_for() {
     j274ap | j293ap | j313ap | j456ap | j457ap | j314cap | j314sap | j316cap | j316sap | j375cap | j375dap) echo m1 ;;
     *) echo unknown ;;
   esac
+}
+
+# An extracted installer package knows M3 when its device table has the M3 Pro
+# chip and the 16-inch M3 Pro MacBook Pro; the four M3 chips and eleven
+# machines landed in one upstream change, so either row stands for all.
+installer_knows_m3() {
+  local dir="$1"
+  grep -q '0x6030' "$dir/main.py" && grep -q '"j516sap"' "$dir/main.py"
 }
 
 # Add "14.8.3" to every supported_fw list that lacks it. Line-oriented so it
@@ -99,6 +119,21 @@ patch_installer_data() {
   ' "$input" >"$output"
 }
 
+# Download an installer package and unpack it into a directory. The package
+# layout is the same for Asahi and Asahi Alarm: install.sh, main.py and the
+# Python framework at the top level, installer_data.json expected next to them.
+fetch_installer() {
+  local name="$1" flag="$2" base="$3" dest="$4" pkg
+  installer_version=$(curl --no-progress-meter -L "$flag") ||
+    fail "could not read the $name installer version from $flag"
+  pkg="installer-$installer_version.tar.gz"
+  log "Fetching the $name installer, version $installer_version"
+  curl --no-progress-meter -L -o "$pkg" "${base%/}/$pkg" ||
+    fail "could not download ${base%/}/$pkg"
+  mkdir -p "$dest"
+  tar xf "$pkg" -C "$dest"
+}
+
 print_m3_briefing() {
   cat <<BRIEF
 
@@ -123,7 +158,7 @@ BRIEF
 }
 
 main() {
-  local data_only=0 patch=1 generation
+  local data_only=0 patch=1 generation pkgdir installer_version
   while (( $# )); do
     case $1 in
       --data-only) data_only=1 ;;
@@ -153,18 +188,17 @@ main() {
     patch=0
   fi
 
+  # A run under sudo leaves a root-owned directory behind that a later run as
+  # the login user cannot rename; work beside it rather than stopping.
   if [[ -e $TMP ]]; then
-    mv "$TMP" "$TMP-$(date +%Y%m%d-%H%M%S)"
+    if ! mv "$TMP" "$TMP-$(date +%Y%m%d-%H%M%S)" 2>/dev/null; then
+      TMP=$(mktemp -d "$TMP.XXXXXX")
+      warn "$(dirname "$TMP")/asahi-install belongs to another user; working in $TMP instead"
+    fi
   fi
   mkdir -p "$TMP"
   cd "$TMP"
 
-  log "Fetching the Asahi Alarm installer"
-  local pkg_ver pkg
-  pkg_ver=$(curl --no-progress-meter -L "$VERSION_FLAG")
-  pkg="installer-$pkg_ver.tar.gz"
-  log "Version: $pkg_ver"
-  curl --no-progress-meter -L -o "$pkg" "$INSTALLER_BASE/$pkg"
   curl --no-progress-meter -L -o installer_data.json.orig "$INSTALLER_DATA" ||
     fail "could not download installer_data.json"
 
@@ -185,10 +219,24 @@ main() {
     exit 0
   fi
 
-  log "Extracting"
-  tar xf "$pkg"
+  pkgdir="$TMP/installer"
+  fetch_installer "Asahi Alarm" "$VERSION_FLAG" "$INSTALLER_BASE" "$pkgdir"
+  if [[ $generation == "m3" ]] && ! installer_knows_m3 "$pkgdir"; then
+    log "Asahi Alarm's installer $installer_version has no M3 in its device table; using Asahi's own installer with Asahi Alarm's images"
+    rm -rf "$pkgdir"
+    fetch_installer "Asahi" "$ASAHI_VERSION_FLAG" "$ASAHI_INSTALLER_BASE" "$pkgdir"
+    installer_knows_m3 "$pkgdir" ||
+      fail "Asahi's installer $installer_version has no M3 in its device table either; nothing to run"
+  fi
+  cp installer_data.json "$pkgdir/installer_data.json"
+  cd "$pkgdir"
 
-  [[ $generation == "m3" ]] && print_m3_briefing
+  if [[ $generation == "m3" ]]; then
+    print_m3_briefing
+    # The installer asks about expert mode only when this is set, and refuses
+    # an M3 outside expert mode.
+    export EXPERT=1
+  fi
 
   export VERSION_FLAG INSTALLER_BASE INSTALLER_DATA REPO_BASE
   export REPORT=https://stats.asahilinux.org/report

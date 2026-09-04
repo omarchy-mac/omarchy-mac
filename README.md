@@ -30,7 +30,7 @@ place, see [docs/upgrade-to-quattro.md](docs/upgrade-to-quattro.md).
 curl https://asahi-alarm.org/installer-bootstrap.sh | sh
 ```
 
-On an **M3-family Mac** run this instead. It is the same installer and the same images, with the one line of installer data the M3 needs (firmware 14.8.3); answer yes to expert mode when asked:
+On an **M3-family Mac** run this instead. It uses the same Asahi Alarm images, swaps in Asahi's own installer package when Asahi Alarm's does not list M3 yet, adds the one line of installer data the M3 needs (firmware 14.8.3), and turns on the expert-mode question; answer yes to it:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/omarchy-mac/omarchy-mac/quattro/bin/omarchy-mac-asahi-install | bash

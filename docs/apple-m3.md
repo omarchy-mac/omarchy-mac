@@ -27,15 +27,18 @@ Asahi said on 2026-08-26 it is "almost ready to cut an official release" for M3.
 
 ## Installing on an M3
 
-The Asahi Alarm installer refuses an M3 out of the box, and not because of the installer code: it already has every M3 device in its table and knows to use the 14.8.3 firmware. What stops it is `installer_data.json`, where each Asahi Alarm image lists the macOS firmware versions it was built against, and none lists 14.8.3. On an M3 the installer finds no firmware the image accepts and stops with "Your system firmware is too old" (asahi-installer issue 438). The Asahi developers' instruction for M3 testing is to add "14.8.3" to that list by hand (asahi-installer PR 424).
+The Asahi Alarm bootstrap refuses an M3 out of the box, for two reasons stacked on top of each other:
 
-`bin/omarchy-mac-asahi-install` does exactly that and nothing else. From macOS:
+1. **The installer package.** Asahi's own installer (asahi-installer 0.9.0 and later) has every M3 device in its table, gated to expert mode, against the 14.8.3 firmware. Asahi Alarm ships its own build of that installer, and as of 0.8.4 it is an older one whose table ends at M2: on an M3 it prints "This device is not supported yet!" and exits, before the expert-mode question, which the installer only asks when `EXPERT` is set in the environment anyway. The installer is data-driven, so Asahi's package runs unchanged against Asahi Alarm's image list and images.
+2. **`installer_data.json`.** Each Asahi Alarm image lists the macOS firmware versions it was built against, and none lists 14.8.3, so even an M3-aware installer finds no firmware the image accepts and stops with "Your system firmware is too old" (asahi-installer issue 438). The Asahi developers' instruction for M3 testing is to add "14.8.3" to that list by hand (asahi-installer PR 424).
+
+`bin/omarchy-mac-asahi-install` undoes both. From macOS:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/omarchy-mac/omarchy-mac/quattro/bin/omarchy-mac-asahi-install | bash
 ```
 
-It fetches the same installer package and the same images from asahi-alarm.org as the official bootstrap, adds "14.8.3" to every image's `supported_fw`, prints a briefing, and hands over to the installer. Answer **yes** to expert mode (the installer requires it for M3), pick **Asahi Alarm Minimal (BTRFS)**, and size the partition. On an M1 or M2 it runs the stock data unchanged; `--data-only` writes the patched JSON to `/tmp/asahi-install/` without running anything.
+It fetches Asahi Alarm's installer package and image list from asahi-alarm.org as the official bootstrap does, adds "14.8.3" to every image's `supported_fw`, and checks the package's device table for M3. When the table ends at M2 it fetches Asahi's own installer from cdn.asahilinux.org instead and points it at the Asahi Alarm images; the day Asahi Alarm rebuilds its installer with the M3 table, the wrapper uses that one with no change. It then sets `EXPERT=1`, prints a briefing, and hands over. Answer **yes** to expert mode (the installer refuses an M3 without it), pick **Asahi Alarm Minimal (BTRFS)**, and size the partition. On an M1 or M2 it runs the stock package and data unchanged; `--data-only` writes the patched JSON to `/tmp/asahi-install/` without running anything.
 
 Then boot Arch and run `omarchy-mac-setup` as on any other Mac.
 
