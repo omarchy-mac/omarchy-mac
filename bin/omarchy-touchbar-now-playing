@@ -3,6 +3,7 @@
 # omarchy:summary=Now Playing on the Touch Bar: live spectrum, track, transport buttons
 # omarchy:args=[--preview <file.png>|--probe]
 # omarchy:examples=omarchy-touchbar-now-playing | omarchy-touchbar-now-playing --preview frame.png
+# omarchy:hidden=true
 """omarchy-touchbar-now-playing: a "Now Playing" mini app for the Touch Bar.
 
 Draws a live audio spectrum (cava, any PipeWire source), the current track from

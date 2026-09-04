@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # omarchy:summary=Toggle the Now Playing mini app on the Touch Bar
-# omarchy:examples=omarchy toggle touchbar-now-playing
 
 # Bound to a hotkey, so anything that needs a terminal (installing the
 # spectrum analyser on first use) opens in a floating one. Otherwise hand
@@ -13,7 +12,7 @@ if ! omarchy-hw-touchbar; then
 fi
 
 if omarchy-pkg-missing cava; then
-  exec omarchy-launch-floating-terminal-with-presentation omarchy-install-touchbar-now-playing
+  omarchy-launch-floating-terminal-with-presentation omarchy-install-touchbar-now-playing
+else
+  omarchy-touchbar-now-playing
 fi
-
-exec omarchy-touchbar-now-playing

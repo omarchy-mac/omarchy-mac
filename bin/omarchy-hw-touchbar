@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # omarchy:summary=Returns true when a Touch Bar is present
-# omarchy:examples=omarchy-hw-touchbar && echo "Touch Bar"
 
 # The Touch Bar's digitizer registers as an input device named "* Touch Bar":
 # "Mac14,7 Touch Bar" on the M2, "MacBookPro17,1 Touch Bar" on the M1, and

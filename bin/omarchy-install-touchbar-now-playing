@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # omarchy:summary=Install what the Touch Bar Now Playing app needs, then start it
-# omarchy:examples=omarchy install touchbar-now-playing
 
 echo "Installing the Touch Bar Now Playing app's dependencies..."
 omarchy-pkg-add cava python-cairo python-gobject

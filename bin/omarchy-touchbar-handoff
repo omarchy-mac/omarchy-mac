@@ -22,7 +22,10 @@ sysfs=${OMARCHY_SYSFS_PATH:-/sys}
 
 case $verb in
   app | keys | devices) ;;
-  *) echo "usage: omarchy-touchbar-handoff app|keys|devices" >&2; exit 2 ;;
+  *)
+    echo "usage: omarchy-touchbar-handoff app|keys|devices" >&2
+    exit 2
+    ;;
 esac
 
 # The Touch Bar display is the DRM card driven by adp (Apple Silicon) or
@@ -67,8 +70,14 @@ find_backlight() {
   return 1
 }
 
-drm=$(find_drm) || { echo "omarchy-touchbar-handoff: no Touch Bar display found" >&2; exit 1; }
-touch_dev=$(find_touch) || { echo "omarchy-touchbar-handoff: no Touch Bar digitizer found" >&2; exit 1; }
+if ! drm=$(find_drm); then
+  echo "omarchy-touchbar-handoff: no Touch Bar display found" >&2
+  exit 1
+fi
+if ! touch_dev=$(find_touch); then
+  echo "omarchy-touchbar-handoff: no Touch Bar digitizer found" >&2
+  exit 1
+fi
 backlight=$(find_backlight || true)
 
 if [[ $verb == devices ]]; then
@@ -80,8 +89,14 @@ if [[ $verb == devices ]]; then
   exit 0
 fi
 
-[[ -n $user ]] && id -u "$user" >/dev/null 2>&1 || { echo "omarchy-touchbar-handoff: run through sudo" >&2; exit 2; }
-[[ $EUID -eq 0 ]] || { echo "omarchy-touchbar-handoff: must run as root" >&2; exit 2; }
+if [[ -z $user ]] || ! id -u "$user" >/dev/null 2>&1; then
+  echo "omarchy-touchbar-handoff: run through sudo" >&2
+  exit 2
+fi
+if (( EUID != 0 )); then
+  echo "omarchy-touchbar-handoff: must run as root" >&2
+  exit 2
+fi
 
 # Device nodes take an ACL. The backlight is a sysfs attribute, and sysfs has
 # no ACLs, so it changes owner instead, the same way udev's backlight rules
