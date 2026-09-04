@@ -1,0 +1,209 @@
+#!/bin/bash
+
+# omarchy:summary=Run the Asahi Alarm installer from macOS, unlocking M3-generation Macs
+# omarchy:group=mac
+# omarchy:args=[--data-only] [--no-patch] [-- <installer args>]
+# omarchy:examples=bash omarchy-mac-asahi-install | bash omarchy-mac-asahi-install --data-only
+# omarchy:hidden=true
+
+# Runs on macOS, not on the installed system: it is the step before every
+# other command in this repo, and the one the stock Asahi Alarm bootstrap gets
+# wrong for M3 Macs.
+#
+# The installer itself knows M3 (T8122, T6030, T6031, T6034) and will install
+# on one in expert mode, using the macOS 14.8.3 firmware. What stops it is
+# installer_data.json: every Asahi Alarm image lists the firmware versions it
+# was tested with, and none of them lists 14.8.3, so on an M3 the installer
+# finds no firmware the image accepts and stops with "Your system firmware is
+# too old". The Asahi developers' own instruction for M3 testing is to add
+# "14.8.3" to that list by hand. This script does that and nothing else: same
+# installer package, same images, same URLs as the official bootstrap, with the
+# one line the M3 needs.
+#
+# Runs under macOS's bash 3.2, so no associative arrays and no case-changing expansions.
+
+set -e
+
+VERSION_FLAG="https://asahi-alarm.org/latest"
+INSTALLER_BASE="https://asahi-alarm.org/"
+INSTALLER_DATA="https://asahi-alarm.org/installer_data.json"
+REPO_BASE="https://asahi-alarm.org/"
+M3_FIRMWARE="14.8.3"
+TMP=/tmp/asahi-install
+
+log() { printf '\033[32m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[33mWarning:\033[0m %s\n' "$*" >&2; }
+fail() { printf '\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# The Apple target name (J516sAP) is the same identifier the installer keys
+# its device table on. M3 rows are the ones the installer marks expert-only.
+mac_generation() {
+  mac_generation_for "$(sysctl -n hw.target 2>/dev/null)"
+}
+
+mac_generation_for() {
+  local target
+  target=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  case $target in
+    j433ap | j434ap | j504ap | j613ap | j615ap | j514sap | j514cap | j514map | j516sap | j516cap | j516map) echo m3 ;;
+    j413ap | j493ap | j414cap | j414sap | j416cap | j416sap | j473ap | j474sap | j415ap | j475cap | j475dap | j180dap) echo m2 ;;
+    j274ap | j293ap | j313ap | j456ap | j457ap | j314cap | j314sap | j316cap | j316sap | j375cap | j375dap) echo m1 ;;
+    *) echo unknown ;;
+  esac
+}
+
+# Add "14.8.3" to every supported_fw list that lacks it. Line-oriented so it
+# needs nothing but awk: a list is either on one line ("supported_fw": [...])
+# or opens on one line and closes on a later one, with one version per line.
+# Callable on its own so the test suite can run it against sample data.
+patch_installer_data() {
+  local input="$1" output="$2" version="${3:-$M3_FIRMWARE}"
+  awk -v ver="$version" '
+    function flush(   i, indent, has) {
+      has = 0
+      for (i = 1; i <= n; i++) if (index(buf[i], "\"" ver "\"")) has = 1
+      if (!has) {
+        # Indent the new entry like the first existing one; a list with no
+        # entries gets the closing line indentation plus four spaces.
+        if (n > 1) { indent = buf[2]; sub(/[^ \t].*$/, "", indent) }
+        else { indent = buf[n]; sub(/[^ \t].*$/, "", indent); indent = indent "    " }
+        print buf[1]
+        print indent "\"" ver "\","
+        for (i = 2; i <= n; i++) print buf[i]
+      } else {
+        for (i = 1; i <= n; i++) print buf[i]
+      }
+      n = 0
+    }
+    BEGIN { n = 0; inlist = 0 }
+    inlist {
+      buf[++n] = $0
+      if ($0 ~ /\]/) { inlist = 0; flush() }
+      next
+    }
+    /"supported_fw"[ \t]*:[ \t]*\[/ {
+      if ($0 ~ /\]/) {
+        # Whole list on one line.
+        if (!index($0, "\"" ver "\"")) {
+          if ($0 ~ /\[[ \t]*\]/) sub(/\[[ \t]*\]/, "[\"" ver "\"]")
+          else sub(/\]/, ", \"" ver "\"]")
+        }
+        print
+        next
+      }
+      inlist = 1
+      buf[++n] = $0
+      next
+    }
+    { print }
+  ' "$input" >"$output"
+}
+
+print_m3_briefing() {
+  cat <<BRIEF
+
+  This is an M3-generation Mac. Asahi Linux has not released for it yet; the
+  installer runs only in expert mode and the resulting system has:
+
+    working   CPU, NVMe, Wi-Fi, Bluetooth, keyboard, trackpad, speakers,
+              microphones, USB, battery, sleep
+    missing   GPU acceleration (software rendering), display brightness,
+              external displays, webcam, Touch ID
+
+  When the installer asks:
+    "Enable expert mode?"          answer  y   (M3 requires it)
+    which OS to install            choose  Asahi Alarm Minimal (BTRFS)
+    how much space                 the installer keeps 38 GB free for macOS;
+                                   macOS itself cannot shrink below what it
+                                   already uses
+
+  Afterwards, boot into Arch and run the usual omarchy-mac-setup.
+
+BRIEF
+}
+
+main() {
+  local data_only=0 patch=1 generation
+  while (( $# )); do
+    case $1 in
+      --data-only) data_only=1 ;;
+      --no-patch) patch=0 ;;
+      --) shift; break ;;
+      -h | --help)
+        sed -n '3,6p' "$0" | sed 's/^# omarchy:[a-z-]*=//'
+        exit 0
+        ;;
+      *) fail "unknown argument: $1" ;;
+    esac
+    shift
+  done
+
+  [[ -e /System ]] || fail "run this from macOS; it drives the Asahi installer, which only runs there"
+  command -v curl >/dev/null || fail "curl is required"
+  curl --no-progress-meter file:/// >/dev/null 2>&1 ||
+    fail "this curl is too old; Asahi needs macOS 13.5 or newer, and an M3 needs 14.8.3 or newer"
+
+  generation=$(mac_generation)
+  log "Mac: $(sysctl -n hw.model) ($(sysctl -n hw.target)), $(sysctl -n machdep.cpu.brand_string), generation $generation"
+  if [[ $generation == "unknown" ]]; then
+    warn "This Mac is not in the table; running the stock installer unchanged."
+    patch=0
+  elif [[ $generation != "m3" ]]; then
+    log "Asahi supports this generation; the installer data needs no change."
+    patch=0
+  fi
+
+  if [[ -e $TMP ]]; then
+    mv "$TMP" "$TMP-$(date +%Y%m%d-%H%M%S)"
+  fi
+  mkdir -p "$TMP"
+  cd "$TMP"
+
+  log "Fetching the Asahi Alarm installer"
+  local pkg_ver pkg
+  pkg_ver=$(curl --no-progress-meter -L "$VERSION_FLAG")
+  pkg="installer-$pkg_ver.tar.gz"
+  log "Version: $pkg_ver"
+  curl --no-progress-meter -L -o "$pkg" "$INSTALLER_BASE/$pkg"
+  curl --no-progress-meter -L -o installer_data.json.orig "$INSTALLER_DATA" ||
+    fail "could not download installer_data.json"
+
+  if (( patch )); then
+    log "Adding firmware $M3_FIRMWARE to every image's supported_fw"
+    patch_installer_data installer_data.json.orig installer_data.json "$M3_FIRMWARE"
+    if diff -u installer_data.json.orig installer_data.json >installer_data.diff; then
+      warn "installer_data.json already listed $M3_FIRMWARE everywhere; nothing changed"
+    else
+      log "$(grep -c '^+.*"'"$M3_FIRMWARE"'"' installer_data.diff) image entries patched (diff in $TMP/installer_data.diff)"
+    fi
+  else
+    cp installer_data.json.orig installer_data.json
+  fi
+
+  if (( data_only )); then
+    log "Patched data written to $TMP/installer_data.json; not running the installer."
+    exit 0
+  fi
+
+  log "Extracting"
+  tar xf "$pkg"
+
+  [[ $generation == "m3" ]] && print_m3_briefing
+
+  export VERSION_FLAG INSTALLER_BASE INSTALLER_DATA REPO_BASE
+  export REPORT=https://stats.asahilinux.org/report
+  export REPORT_TAG=alarm-prod
+  export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+  if [[ $USER != "root" ]]; then
+    log "The installer needs to run as root; enter your macOS password if asked."
+    exec caffeinate -dis sudo -E ./install.sh "$@"
+  else
+    exec caffeinate -dis ./install.sh "$@"
+  fi
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  main "$@"
+fi
