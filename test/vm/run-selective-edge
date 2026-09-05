@@ -12,6 +12,7 @@ set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 CACHE="${OMARCHY_INSTALL_VM_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-install-vm}"
 WORK="${OMARCHY_INSTALL_VM_WORK:-/var/tmp/omarchy-install-vm}"
+SOURCE="$WORK/source"
 TARBALL_URL="${OMARCHY_INSTALL_VM_TARBALL:-https://fl.us.mirror.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz}"
 GUEST_USER=ci
 KEEP_ROOT=${OMARCHY_INSTALL_VM_KEEP:-0}
@@ -50,7 +51,7 @@ cleanup() {
     log "keeping $WORK/root (OMARCHY_INSTALL_VM_KEEP=1)"
     return 0
   fi
-  as_root rm -rf "$WORK/root"
+  as_root rm -rf "$WORK/root" "$SOURCE"
 }
 
 [[ $(uname -m) == "aarch64" ]] || fail "this harness only runs on aarch64"
@@ -61,12 +62,16 @@ command -v sha256sum >/dev/null || fail "sha256sum is required"
 
 as_root true || fail "root (or passwordless sudo) is required to spawn the machine"
 
+# Work is disposable, but the caller's checkout must never be removed or chowned.
+[[ $WORK =~ ^/var/tmp/omarchy-[a-zA-Z0-9_.-]+$ && $WORK != *".."* && ! -L $WORK && ! -L $WORK/root && ! -L $SOURCE ]] || fail "unsafe work directory"
+[[ $ROOT != "$WORK" && $ROOT != "$WORK/"* ]] || fail "checkout must be outside the work directory"
+
 mkdir -p "$CACHE"
 as_root mkdir -p "$WORK/logs"
 as_root find "$WORK/logs" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 as_root chown "$CALLER_UID:$CALLER_GID" "$WORK/logs"
-as_root rm -rf "$WORK/root"
-as_root mkdir -p "$WORK/root"
+as_root rm -rf "$WORK/root" "$SOURCE"
+as_root mkdir -p "$WORK/root" "$SOURCE"
 trap cleanup EXIT
 
 tarball="$CACHE/ArchLinuxARM-aarch64-latest.tar.gz"
@@ -146,9 +151,19 @@ nspawn() {
     --directory="$WORK/root" \
     --register=no \
     --resolv-conf=bind-host \
-    --bind="$ROOT:/src/omarchy" \
+    --bind="$SOURCE:/src/omarchy" \
     --console=pipe \
     "$@"
+}
+
+stage_source() {
+  local guest_uid guest_gid
+  # Keep .git for package builds, without granting guest writes to the checkout.
+  as_root cp -a "$ROOT/." "$SOURCE/"
+  # Hosted runners and local developers can have a different UID from guest ci.
+  guest_uid=$(nspawn id -u "$GUEST_USER")
+  guest_gid=$(nspawn id -g "$GUEST_USER")
+  as_root chown -R "$guest_uid:$guest_gid" "$SOURCE"
 }
 
 set_test_mirror() {
@@ -183,6 +198,8 @@ BOOTSTRAP
   (cd "$CACHE" && sha256sum "$(basename "$prepared")" >"$(basename "$prepared_checksum")")
   as_root chown "$CALLER_UID:$CALLER_GID" "$prepared_checksum"
 fi
+
+stage_source
 
 if [[ $CHECK_PACKAGE_SOURCES == "1" ]]; then
   log "validating restricted package sources and current-stack repository remediation"
@@ -246,8 +263,9 @@ run_install "$WORK/logs/install.log" || install_status=$?
 
 # Also run when later system setup fails: the default package loop must not
 # silently downgrade the explicit edge selection through an unqualified yay.
-if [[ $CHECK_PACKAGE_SOURCES == "1" ]]; then
-  nspawn /bin/bash -euo pipefail <<'VERIFY_FINAL' 2>&1 | tee "$WORK/logs/final-package-sources.log"
+assert_package_sources() {
+  local log_file="$1"
+  nspawn /bin/bash -euo pipefail <<'VERIFY_FINAL' 2>&1 | tee "$log_file"
 export LC_ALL=C
 source /src/omarchy/install/helpers/arm-package-sources.sh
 [[ $(pacman-conf --repo omarchy Usage) == "Sync" ]]
@@ -261,11 +279,11 @@ done < <(omarchy_arm_package_targets)
 pacman -Dk
 printf 'PASS: installer retained the explicit edge package versions\n'
 VERIFY_FINAL
-fi
-(( install_status == 0 )) || fail "install.sh exited $install_status (see $WORK/logs/install.log)"
+}
 
-log "asserting the installed system"
-nspawn /bin/bash -euo pipefail <<'ASSERT' | tee "$WORK/logs/assert.log"
+assert_installed_system() {
+  local log_file="$1"
+  nspawn /bin/bash -euo pipefail <<'ASSERT' 2>&1 | tee "$log_file"
 source /usr/share/omarchy/default/bash/env-bootstrap
 command -v omarchy >/dev/null
 omarchy commands --check >/dev/null
@@ -281,11 +299,24 @@ su ci -c 'set -e; source /usr/share/omarchy/default/bash/env-bootstrap; command 
 printf 'ok - system setup completed and user finalization marker exists\n'
 printf 'ok - install.sh produced a working Omarchy userspace\n'
 ASSERT
+}
+
+if [[ $CHECK_PACKAGE_SOURCES == "1" ]]; then
+  assert_package_sources "$WORK/logs/final-package-sources.log"
+fi
+(( install_status == 0 )) || fail "install.sh exited $install_status (see $WORK/logs/install.log)"
+
+log "asserting the installed system"
+assert_installed_system "$WORK/logs/assert.log"
 
 if [[ $CHECK_IDEMPOTENCY == "1" ]]; then
   log "running install.sh again to check idempotency"
   run_install "$WORK/logs/install-second.log" || fail "second install.sh run exited $? (see $WORK/logs/install-second.log)"
-  printf 'ok - second install.sh run completed\n' | tee "$WORK/logs/idempotency.log"
+  if [[ $CHECK_PACKAGE_SOURCES == "1" ]]; then
+    assert_package_sources "$WORK/logs/second-package-sources.log"
+  fi
+  assert_installed_system "$WORK/logs/assert-second.log"
+  printf 'ok - second install.sh run completed and assertions passed\n' | tee "$WORK/logs/idempotency.log"
 fi
 
 log "install machine test passed"
