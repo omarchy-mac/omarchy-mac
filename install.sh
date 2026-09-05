@@ -263,6 +263,11 @@ run_system_setup() {
   log "Running Omarchy system setup"
   sudo omarchy-apply-system --install-user "$USER" --first-install
 
+  # System setup restores pacman.conf and can introduce repositories absent
+  # from the starting image. Trust their keys and refresh with a full upgrade
+  # before user setup installs packages, retaining the explicit edge stack.
+  ensure_arm_package_repo
+
   log "Running Omarchy user setup"
   omarchy-provision-user --first-install
 }

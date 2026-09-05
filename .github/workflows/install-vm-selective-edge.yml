@@ -2,7 +2,7 @@ name: Validate selective ARM edge
 
 on:
   push:
-    branches: [selective-arm64-edge, install-stack-integration]
+    branches: [install-stack-integration]
   workflow_dispatch:
 
 permissions:
