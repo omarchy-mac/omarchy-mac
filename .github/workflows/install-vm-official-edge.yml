@@ -26,6 +26,7 @@ jobs:
     env:
       OMARCHY_INSTALL_VM_WORK: /var/tmp/omarchy-install-edge-${{ github.run_id }}-${{ github.run_attempt }}
       OMARCHY_INSTALL_VM_OFFICIAL_EDGE: '1'
+      OMARCHY_INSTALL_VM_TARBALL: https://fl.us.mirror.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz
     steps:
       - name: Checkout trusted commit
         uses: actions/checkout@v4
@@ -41,7 +42,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo --preserve-env=HOME,OMARCHY_INSTALL_VM_WORK,OMARCHY_INSTALL_VM_OFFICIAL_EDGE ./test/vm/run-install
+          sudo --preserve-env=HOME,OMARCHY_INSTALL_VM_WORK,OMARCHY_INSTALL_VM_OFFICIAL_EDGE,OMARCHY_INSTALL_VM_TARBALL ./test/vm/run-install
 
       - name: Upload logs
         if: always()
