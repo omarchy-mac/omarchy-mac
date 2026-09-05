@@ -48,6 +48,11 @@ jobs:
           id
           systemd-nspawn --version
           stat -fc %T /sys/fs/cgroup
+          # Helpful when distinguishing host kernel support from nspawn filtering.
+          if [[ -r /boot/config-$(uname -r) ]]; then
+            grep -E '^(CONFIG_SECURITY_LANDLOCK|CONFIG_LSM)=' "/boot/config-$(uname -r)" || true
+          fi
+          sudo cat /sys/kernel/security/lsm || true
           getconf PAGESIZE
           df -h /var/tmp "$RUNNER_TEMP"
           free -m
