@@ -17,6 +17,7 @@ TARBALL_URL="${OMARCHY_INSTALL_VM_TARBALL:-https://os.archlinuxarm.org/os/ArchLi
 GUEST_USER=ci
 KEEP_ROOT=${OMARCHY_INSTALL_VM_KEEP:-0}
 CHECK_IDEMPOTENCY=${OMARCHY_INSTALL_VM_IDEMPOTENCY:-0}
+OFFICIAL_EDGE=${OMARCHY_INSTALL_VM_OFFICIAL_EDGE:-0}
 PREPARED_CACHE_VERSION=3
 ROOTFS_SIGNING_FINGERPRINT=68B3537F39A313B3E574D06777193F152BDBE6A6
 ROOTFS_KEYSERVER=hkps://keyserver.ubuntu.com
@@ -165,6 +166,52 @@ BOOTSTRAP
   mv "$prepared_partial" "$prepared"
   (cd "$CACHE" && sha256sum "$(basename "$prepared")" >"$(basename "$prepared_checksum")")
   as_root chown "$CALLER_UID:$CALLER_GID" "$prepared_checksum"
+fi
+
+if [[ $OFFICIAL_EDGE == "1" ]]; then
+  log "testing the official Omarchy edge repository in this disposable rootfs"
+  nspawn /bin/bash -euo pipefail <<'OFFICIAL_EDGE_SETUP' 2>&1 | tee "$WORK/logs/official-edge.log"
+# Bootstrap trust from the official source over HTTPS at an immutable commit.
+# makepkg verifies the keyring files against the recipe's SHA-512 checksums.
+keyring_commit=fe0a3da325aee24113ed2ef2ad36362de08bb8d8
+keyring_dir=$(mktemp -d /var/tmp/omarchy-keyring.XXXXXX)
+chown ci:ci "$keyring_dir"
+sudo -u ci git -C "$keyring_dir" init -q
+sudo -u ci git -C "$keyring_dir" fetch --depth 1 https://github.com/omacom/omarchy-pkgs.git "$keyring_commit"
+sudo -u ci git -C "$keyring_dir" checkout --detach FETCH_HEAD
+[[ $(git -c safe.directory="$keyring_dir" -C "$keyring_dir" rev-parse HEAD) == "$keyring_commit" ]]
+printf 'Keyring source: omacom/omarchy-pkgs@%s\n' "$keyring_commit"
+cd "$keyring_dir/pkgbuilds/omarchy-keyring"
+sudo -u ci makepkg --noconfirm
+mapfile -t keyring_packages < <(sudo -u ci makepkg --packagelist)
+(( ${#keyring_packages[@]} > 0 ))
+pacman -U --noconfirm "${keyring_packages[@]}"
+pacman-key --populate omarchy
+cd /
+rm -rf "$keyring_dir"
+
+# Add the experimental repository first without changing the cached base image.
+awk '
+  /^\[extra\]$/ && !added {
+    print "[omarchy]"
+    print "SigLevel = Required DatabaseOptional"
+    print "Server = https://pkgs.omarchy.org/edge/$arch"
+    print ""
+    added = 1
+  }
+  { print }
+  END { if (!added) exit 1 }
+' /etc/pacman.conf >/etc/pacman.conf.edge
+mv /etc/pacman.conf.edge /etc/pacman.conf
+pacman -Sy --noconfirm
+# Aquamarine comes from Arch Linux ARM; the three consumers come from Omarchy.
+# Preserve repository metadata before upgrade/install so ABI failures are visible.
+pacman -Si aquamarine omarchy/hyprtoolkit omarchy/hyprland-guiutils omarchy/hyprland
+pacman -Syu --noconfirm
+pacman -S --needed --noconfirm aquamarine omarchy/hyprtoolkit omarchy/hyprland-guiutils omarchy/hyprland
+pacman -Q aquamarine hyprtoolkit hyprland-guiutils hyprland
+pacman -Dk
+OFFICIAL_EDGE_SETUP
 fi
 
 run_install() {

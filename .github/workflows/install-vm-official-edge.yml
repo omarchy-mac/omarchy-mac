@@ -1,0 +1,53 @@
+name: Install VM official edge
+
+on:
+  push:
+    branches: [e2e-test-pipeline]
+    paths:
+      - .github/workflows/install-vm-official-edge.yml
+      - test/vm/run-install
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-vm
+  cancel-in-progress: false
+
+jobs:
+  install:
+    if: >-
+      github.repository == 'omarchy-mac/omarchy-mac' &&
+      github.actor == 'malik-na' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/e2e-test-pipeline'
+    runs-on: [self-hosted, linux, ARM64]
+    timeout-minutes: 120
+    env:
+      OMARCHY_INSTALL_VM_WORK: /var/tmp/omarchy-install-edge-${{ github.run_id }}-${{ github.run_attempt }}
+      OMARCHY_INSTALL_VM_OFFICIAL_EDGE: '1'
+    steps:
+      - name: Checkout trusted commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Prepare logs
+        run: |
+          sudo mkdir -p "$OMARCHY_INSTALL_VM_WORK/logs"
+          sudo chown "$(id -u):$(id -g)" "$OMARCHY_INSTALL_VM_WORK" "$OMARCHY_INSTALL_VM_WORK/logs"
+
+      - name: Test installation with official edge packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./test/vm/run-install
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-vm-official-edge-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.OMARCHY_INSTALL_VM_WORK }}/logs
+          retention-days: 7
+          if-no-files-found: warn
