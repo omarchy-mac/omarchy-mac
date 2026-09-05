@@ -118,7 +118,7 @@ pass "the installer styles its output with gum from the start"
 # or optional ARM packages fail later with a misleading missing-database error.
 grep -qF 'asahi_alarm_key=' "$install_script" ||
   fail "the installer pins the Asahi Alarm package signing key"
-grep -qF 'pacman-key --recv-keys "$asahi_alarm_key"' "$install_script" ||
+grep -qF 'pacman-key --recv-keys "$asahi_alarm_key" --keyserver hkps://keyserver.ubuntu.com' "$install_script" ||
   fail "the installer bootstraps the Asahi Alarm package signing key"
 grep -qF 'pacman-key --lsign-key "$asahi_alarm_key"' "$install_script" ||
   fail "the installer locally trusts the Asahi Alarm package signing key"
