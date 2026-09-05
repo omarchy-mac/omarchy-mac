@@ -15,6 +15,16 @@ name: Install VM
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Same-repository PR number, branch, tag, or full heads/tags ref (blank uses the default branch)"
+        required: false
+        type: string
+      idempotency:
+        description: "Run install.sh a second time against the installed machine"
+        required: true
+        default: true
+        type: boolean
   schedule:
     - cron: "17 5 * * *"
 
@@ -25,6 +35,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 defaults:
   run:
@@ -41,8 +52,90 @@ jobs:
     env:
       INSTALL_VM_ROOT: /var/tmp/omarchy-install-vm
     steps:
-      - name: Checkout
+      # Resolve user input using the API before any selected repository code is
+      # checked out. Pull requests from forks are deliberately rejected.
+      - name: Resolve trusted target
+        id: target
+        uses: actions/github-script@v7
+        env:
+          TARGET: ${{ inputs.target || '' }}
+        with:
+          script: |
+            const target = process.env.TARGET.trim()
+            let sha
+            let display
+
+            if (!target) {
+              const repository = await github.rest.repos.get(context.repo)
+              const branch = repository.data.default_branch
+              const result = await github.rest.repos.getCommit({ ...context.repo, ref: branch })
+              sha = result.data.sha
+              display = branch
+            } else if (/^[1-9][0-9]*$/.test(target)) {
+              const pull = await github.rest.pulls.get({ ...context.repo, pull_number: Number(target) })
+              if (pull.data.head.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+                core.setFailed(`PR #${target} comes from ${pull.data.head.repo?.full_name || 'a fork'}; self-hosted runs only accept same-repository PRs`)
+                return
+              }
+              sha = pull.data.head.sha
+              display = `PR #${target} (${pull.data.head.ref})`
+            } else {
+              if (!/^[0-9A-Za-z._/-]+$/.test(target) || target.includes('..') || target.startsWith('/') || target.endsWith('/')) {
+                core.setFailed('target is not a valid branch, tag, or full heads/tags ref')
+                return
+              }
+
+              const branch = target.startsWith('refs/heads/') ? target.slice(11) : target
+              const tag = target.startsWith('refs/tags/') ? target.slice(10) : target
+              if (target.startsWith('refs/') && !target.startsWith('refs/heads/') && !target.startsWith('refs/tags/')) {
+                core.setFailed('only refs/heads/* and refs/tags/* are accepted')
+                return
+              }
+
+              if (!target.startsWith('refs/tags/')) {
+                try {
+                  const result = await github.rest.repos.getBranch({ ...context.repo, branch })
+                  sha = result.data.commit.sha
+                  display = `branch ${branch}`
+                } catch (error) {
+                  if (error.status !== 404 || target.startsWith('refs/heads/')) throw error
+                }
+              }
+              if (!sha) {
+                const result = await github.rest.git.getRef({ ...context.repo, ref: `tags/${tag}` })
+                let object = result.data.object
+                const seen = new Set()
+                for (let depth = 0; object.type === 'tag'; depth++) {
+                  if (depth >= 10 || seen.has(object.sha)) {
+                    core.setFailed(`tag ${tag} has an invalid or excessively deep annotation chain`)
+                    return
+                  }
+                  seen.add(object.sha)
+                  const annotation = await github.rest.git.getTag({ ...context.repo, tag_sha: object.sha })
+                  object = annotation.data.object
+                }
+                if (object.type !== 'commit') {
+                  core.setFailed(`tag ${tag} resolves to ${object.type}, not a commit`)
+                  return
+                }
+                sha = object.sha
+                display = `tag ${tag}`
+              }
+            }
+
+            core.setOutput('sha', sha)
+            core.setOutput('display', display)
+            await core.summary.addHeading('Install VM target').addTable([
+              [{ data: 'Requested', header: true }, target || '(default branch)'],
+              [{ data: 'Resolved', header: true }, display],
+              [{ data: 'Commit', header: true }, sha],
+            ]).write()
+
+      - name: Checkout resolved commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          persist-credentials: false
 
       - name: Diagnostics
         run: |
@@ -72,9 +165,11 @@ jobs:
           sudo chown "$(id -u):$(id -g)" "$INSTALL_VM_ROOT" "$INSTALL_VM_ROOT/logs"
 
       - name: Run isolated install
+        env:
+          OMARCHY_INSTALL_VM_IDEMPOTENCY: ${{ github.event_name == 'workflow_dispatch' && inputs.idempotency && '1' || '0' }}
         run: |
           set +e
-          sudo --preserve-env=HOME ./test/vm/run-install
+          sudo --preserve-env=HOME,OMARCHY_INSTALL_VM_IDEMPOTENCY ./test/vm/run-install
           status=$?
           set -e
           printf '%s\n' "$status" >"$INSTALL_VM_ROOT/logs/exit_code"

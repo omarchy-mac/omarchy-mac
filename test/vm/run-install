@@ -16,6 +16,10 @@ WORK="${OMARCHY_INSTALL_VM_WORK:-/var/tmp/omarchy-install-vm}"
 TARBALL_URL="${OMARCHY_INSTALL_VM_TARBALL:-http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz}"
 GUEST_USER=ci
 KEEP_ROOT=${OMARCHY_INSTALL_VM_KEEP:-0}
+CHECK_IDEMPOTENCY=${OMARCHY_INSTALL_VM_IDEMPOTENCY:-0}
+PREPARED_CACHE_VERSION=2
+CALLER_UID=${SUDO_UID:-$(id -u)}
+CALLER_GID=${SUDO_GID:-$(id -g)}
 
 log() { printf '\033[32m==>\033[0m %s\n' "$*"; }
 fail() { printf '\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -30,6 +34,7 @@ as_root() {
 
 cleanup() {
   as_root chmod -R a+rX "$WORK/logs" 2>/dev/null || true
+  as_root chown "$CALLER_UID:$CALLER_GID" "$WORK/logs" 2>/dev/null || true
   if (( KEEP_ROOT )); then
     log "keeping $WORK/root (OMARCHY_INSTALL_VM_KEEP=1)"
     return 0
@@ -43,7 +48,10 @@ command -v curl >/dev/null || fail "curl is required"
 
 as_root true || fail "root (or passwordless sudo) is required to spawn the machine"
 
-mkdir -p "$CACHE" "$WORK/logs"
+mkdir -p "$CACHE"
+as_root mkdir -p "$WORK/logs"
+as_root find "$WORK/logs" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+as_root chown "$CALLER_UID:$CALLER_GID" "$WORK/logs"
 as_root rm -rf "$WORK/root"
 as_root mkdir -p "$WORK/root"
 trap cleanup EXIT
@@ -55,8 +63,16 @@ if [[ ! -f $tarball ]]; then
   mv "$tarball.partial" "$tarball"
 fi
 
-log "extracting rootfs into $WORK/root"
-as_root tar -xzf "$tarball" -C "$WORK/root"
+prepared="$CACHE/prepared-aarch64-v${PREPARED_CACHE_VERSION}.tar.gz"
+
+if [[ -f $prepared ]]; then
+  log "restoring prepared rootfs snapshot"
+  as_root tar -xzf "$prepared" -C "$WORK/root"
+else
+  log "extracting rootfs into $WORK/root"
+  as_root tar -xzf "$tarball" -C "$WORK/root"
+fi
+
 as_root mkdir -p "$WORK/root/src/omarchy"
 
 nspawn() {
@@ -71,8 +87,9 @@ nspawn() {
     "$@"
 }
 
-log "bootstrapping pacman, sudo, and the $GUEST_USER user"
-nspawn /bin/bash -euo pipefail <<'BOOTSTRAP'
+if [[ ! -f $prepared ]]; then
+  log "bootstrapping pacman, sudo, and the $GUEST_USER user"
+  nspawn /bin/bash -euo pipefail <<'BOOTSTRAP'
 pacman-key --init
 pacman-key --populate archlinuxarm
 pacman -Sy --noconfirm
@@ -85,14 +102,25 @@ locale-gen >/dev/null
 printf 'LANG=en_US.UTF-8\n' >/etc/locale.conf
 BOOTSTRAP
 
+  log "saving prepared rootfs snapshot"
+  prepared_partial="$prepared.partial"
+  as_root rm -f "$prepared_partial"
+  as_root tar -czf "$prepared_partial" -C "$WORK/root" .
+  as_root chown "$(id -u):$(id -g)" "$prepared_partial"
+  mv "$prepared_partial" "$prepared"
+fi
+
+run_install() {
+  local log_file="$1"
+  nspawn --user="$GUEST_USER" --chdir=/src/omarchy \
+    /bin/bash -euo pipefail -c 'export LANG=en_US.UTF-8; bash install.sh' \
+    | tee "$log_file"
+  local status=${PIPESTATUS[0]}
+  return "$status"
+}
+
 log "running install.sh as $GUEST_USER (AUR builds take a while)"
-set +e
-nspawn --user="$GUEST_USER" --chdir=/src/omarchy \
-  /bin/bash -euo pipefail -c 'export LANG=en_US.UTF-8; bash install.sh' \
-  | tee "$WORK/logs/install.log"
-install_status=${PIPESTATUS[0]}
-set -e
-(( install_status == 0 )) || fail "install.sh exited $install_status (see $WORK/logs/install.log)"
+run_install "$WORK/logs/install.log" || fail "install.sh exited $? (see $WORK/logs/install.log)"
 
 log "asserting the installed system"
 nspawn /bin/bash -euo pipefail <<'ASSERT' | tee "$WORK/logs/assert.log"
@@ -100,10 +128,20 @@ source /usr/share/omarchy/default/bash/env-bootstrap
 command -v omarchy >/dev/null
 omarchy commands --check >/dev/null
 pacman -Q omarchy >/dev/null
+pacman -Q omarchy-settings >/dev/null
 [[ -d /usr/share/omarchy/bin ]]
 [[ -d /usr/share/omarchy/install ]]
+[[ -x /usr/share/omarchy/bin/omarchy ]]
+grep -q '^\[omarchy-aarch64\]' /etc/pacman.conf
 id ci >/dev/null
+su ci -c 'source /usr/share/omarchy/default/bash/env-bootstrap; command -v omarchy >/dev/null; [[ -d $HOME/.config/hypr ]]'
 printf 'ok - install.sh produced a working Omarchy userspace\n'
 ASSERT
+
+if [[ $CHECK_IDEMPOTENCY == "1" ]]; then
+  log "running install.sh again to check idempotency"
+  run_install "$WORK/logs/install-second.log" || fail "second install.sh run exited $? (see $WORK/logs/install-second.log)"
+  printf 'ok - second install.sh run completed\n' | tee "$WORK/logs/idempotency.log"
+fi
 
 log "install machine test passed"
