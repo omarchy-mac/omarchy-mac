@@ -5,6 +5,14 @@ omarchy_arm_package_targets() {
   printf '%s\n' omarchy/hyprland omarchy/hyprtoolkit omarchy/hyprland-guiutils
 }
 
+omarchy_arm_package_is_selected() {
+  local target
+  while read -r target; do
+    [[ ${target#*/} == "$1" ]] && return 0
+  done < <(omarchy_arm_package_targets)
+  return 1
+}
+
 omarchy_arm_package_repo() {
   printf '%s\n' '[omarchy]' 'Usage = Sync' 'SigLevel = Required DatabaseOptional' 'Server = https://pkgs.omarchy.org/edge/$arch'
 }

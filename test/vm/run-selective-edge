@@ -241,7 +241,27 @@ run_install() {
 }
 
 log "running install.sh as $GUEST_USER (AUR builds take a while)"
-run_install "$WORK/logs/install.log" || fail "install.sh exited $? (see $WORK/logs/install.log)"
+install_status=0
+run_install "$WORK/logs/install.log" || install_status=$?
+
+# Also run when later system setup fails: the default package loop must not
+# silently downgrade the explicit edge selection through an unqualified yay.
+if [[ $CHECK_PACKAGE_SOURCES == "1" ]]; then
+  nspawn /bin/bash -euo pipefail <<'VERIFY_FINAL' 2>&1 | tee "$WORK/logs/final-package-sources.log"
+export LC_ALL=C
+source /src/omarchy/install/helpers/arm-package-sources.sh
+while read -r target; do
+  package=${target#*/}
+  expected=$(pacman -Si "$target" | sed -n 's/^Version[[:space:]]*:[[:space:]]*//p')
+  installed=$(pacman -Q "$package" | cut -d ' ' -f2)
+  printf '%s installed=%s expected=%s\n' "$target" "$installed" "$expected"
+  [[ -n $expected && $installed == "$expected" ]]
+done < <(omarchy_arm_package_targets)
+pacman -Dk
+printf 'PASS: installer retained the explicit edge package versions\n'
+VERIFY_FINAL
+fi
+(( install_status == 0 )) || fail "install.sh exited $install_status (see $WORK/logs/install.log)"
 
 log "asserting the installed system"
 nspawn /bin/bash -euo pipefail <<'ASSERT' | tee "$WORK/logs/assert.log"

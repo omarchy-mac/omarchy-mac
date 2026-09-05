@@ -224,6 +224,12 @@ install_default_package_set() {
 
   log "Installing the default package set (AUR builds take a while)"
   while read -r package; do
+    # Already installed in the full compatibility transaction. An unqualified
+    # yay target would select the regular repository and can downgrade it.
+    if omarchy_arm_package_is_selected "$package"; then
+      pacman -Q "$package" >/dev/null || fail "Compatible package missing after system upgrade: $package"
+      continue
+    fi
     # These compile a dependency chain for hours before failing an architecture
     # check, so do not start them unless asked to.
     if (( ! attempt_unavailable )) && package_is_unavailable_here "$package"; then
