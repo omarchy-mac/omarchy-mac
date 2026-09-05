@@ -34,21 +34,25 @@ grep -qF 'Server = https://pkgs.omarchy.org/edge/$arch' "$ROOT/default/pacman/pa
 pass "x86 pacman channel configs keep their upstream repo URLs"
 
 # aarch64 configs live under default/pacman/aarch64/ so they cannot leak into
-# an x86 refresh. They pin aarch64, offer [omarchy-aarch64], and never point
-# at the x86-only pkgs.omarchy.org repo.
+# an x86 refresh. They pin aarch64, offer the community ARM repository, and
+# restrict official edge to explicitly selected compatibility packages.
 for config in "$ROOT"/default/pacman/aarch64/pacman*.conf; do
   grep -qF 'Architecture = aarch64' "$config" ||
     fail "every aarch64 pacman config pins aarch64" "missing in: $(basename "$config")"
   grep -qF '[omarchy-aarch64]' "$config" ||
     fail "every aarch64 pacman config offers the Omarchy ARM repo" "missing in: $(basename "$config")"
-  grep -qF 'pkgs.omarchy.org' "$config" &&
-    fail "aarch64 pacman configs must not point at the x86 Omarchy package repo" \
-      "still x86: $(basename "$config")"
+  section=$(awk '/^\[/ { selected = ($0 == "[omarchy]") } selected { print }' "$config")
+  grep -qxF 'Usage = Sync' <<< "$section" || fail "official edge requires explicit targets in $config"
+  grep -qxF 'SigLevel = Required DatabaseOptional' <<< "$section" || fail "official edge requires signed packages in $config"
+  grep -qxF 'Server = https://pkgs.omarchy.org/edge/$arch' <<< "$section" || fail "official edge uses target architecture in $config"
+  if grep '^[[:space:]]*Server.*pkgs\.omarchy\.org' "$config" | grep -vxF 'Server = https://pkgs.omarchy.org/edge/$arch'; then
+    fail "no x86 or alternate-channel official repository in $config"
+  fi
 done
-pass "aarch64 pacman configs pin ARM and offer [omarchy-aarch64]"
+pass "aarch64 pacman configs pin ARM and restrict official edge"
 
-# ARM mirrorlists stay in the aarch64 tree. The x86 tree is allowed to name
-# omarchy.org; the aarch64 tree is not.
+# The regular distribution mirrorlists must remain Arch Linux ARM sources;
+# official edge belongs only in its restricted, separate repository section.
 leaky=()
 while read -r file; do
   [[ -n $file ]] || continue

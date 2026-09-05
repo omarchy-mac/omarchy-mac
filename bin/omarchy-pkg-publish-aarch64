@@ -10,9 +10,9 @@
 # self-hosted git server is up. It went down mid-install once and took the
 # whole desktop with it, because there is no Quattro shell without quickshell.
 #
-# The fix is the repo that already exists. default/pacman/pacman-stable.conf
-# points pacman at a GitHub release serving a real pacman database, and this
-# publishes into it: build on this machine, add to the database, upload.
+# The fix is the repo that already exists under default/pacman/aarch64/.
+# Its stable config points pacman at a GitHub release serving a real pacman
+# database, and this publishes into it: build on this machine, add to the database, upload.
 # Installs then fetch a binary instead of building one.
 #
 # Run it on Apple Silicon as your regular user, with gh logged in to the
