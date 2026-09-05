@@ -1,0 +1,68 @@
+name: Build AArch64 Hyprland packages
+
+on:
+  workflow_dispatch:
+  # Temporary bootstrap trigger while workflow_dispatch is unavailable for the
+  # maintainer account. Remove this push trigger after the first staged build.
+  push:
+    branches:
+      - e2e-test-pipeline
+    paths:
+      - .github/workflows/build-aarch64-packages.yml
+      - test/vm/build-aarch64-hyprland
+
+concurrency:
+  group: build-aarch64-hyprland
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
+jobs:
+  build:
+    name: Build and stage on Arch Linux ARM
+    if: >-
+      github.repository == 'omarchy-mac/omarchy-mac' &&
+      ((github.event_name == 'workflow_dispatch' && github.actor == 'malik-na') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/e2e-test-pipeline' && github.actor == 'malik-na'))
+    runs-on: [self-hosted, linux, ARM64]
+    timeout-minutes: 240
+    env:
+      OMARCHY_AARCH64_BUILD_WORK: ${{ runner.temp }}/omarchy-aarch64-build-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout trusted commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify runner and harness
+        run: |
+          [[ $(uname -m) == "aarch64" ]]
+          command -v systemd-nspawn
+          command -v sudo
+          [[ -x ./test/vm/build-aarch64-hyprland ]]
+
+      - name: Build and stage packages
+        run: sudo --preserve-env=HOME,OMARCHY_AARCH64_BUILD_WORK ./test/vm/build-aarch64-hyprland
+
+      - name: Upload staged repository
+        uses: actions/upload-artifact@v4
+        with:
+          name: aarch64-hyprland-repository-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.OMARCHY_AARCH64_BUILD_WORK }}/staging/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aarch64-hyprland-build-log-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.OMARCHY_AARCH64_BUILD_WORK }}/logs/
+          retention-days: 7
+          if-no-files-found: ignore

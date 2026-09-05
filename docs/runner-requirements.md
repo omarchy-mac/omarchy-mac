@@ -18,6 +18,7 @@ The runner must show **Idle** with at least those three labels. Confirm at https
 
 - aarch64 Linux (Asahi / Omarchy). 16k host pages are expected.
 - `systemd-nspawn` (from `systemd`)
+- `gpg`, with outbound HKPS access to `keyserver.ubuntu.com` for rootfs signing-key retrieval
 - passwordless `sudo` for the runner user (the setup script grants this to `github-runner`)
 - outbound network (Arch Linux ARM tarball, pacman, AUR)
 - several GB free on `/` — a full `install.sh` is a second Omarchy userspace. 34G disks fill up.
@@ -43,4 +44,20 @@ Run the same harness locally:
 ```bash
 sudo ./test/vm/run-install
 sudo OMARCHY_INSTALL_VM_IDEMPOTENCY=1 ./test/vm/run-install
+```
+
+## Staged AArch64 package builds
+
+The **Build AArch64 Hyprland packages** workflow uses the same runner class to build `aquamarine`, `hyprtoolkit`, `hyprland-guiutils`, and `hyprland` in dependency order inside a disposable Arch Linux ARM userspace. Each result is installed in that userspace before the next package is built.
+
+The job downloads the current `edge` `omarchy-aarch64.db.tar.zst` and `omarchy-aarch64.files.tar.zst`, updates copies with the new package archives, and records the exact Arch packaging commit used for every recipe. It then extracts a fresh copy of the verified rootfs and configures pacman to use the staged directory first with the live `edge` release as fallback for unchanged package files retained by the existing database. The consumer installs the full four-package stack and verifies dependency resolution and `aarch64` package metadata. Only after that clean consumer test passes does the job upload the complete staging directory as a seven-day Actions artifact. It does not publish or modify the GitHub release.
+
+While account-level manual Actions dispatch is unavailable, the workflow has a temporary push trigger restricted to changes to its workflow or harness on `e2e-test-pipeline`; the job additionally requires repository `omarchy-mac/omarchy-mac` and actor `malik-na`. Remove that push trigger after the first staged build.
+
+Both VM harnesses keep their rootfs caches under the invoking runner user's cache directory. The Arch Linux ARM rootfs and detached signature are downloaded over HTTPS, verified against the pinned official signing fingerprint `68B3537F39A313B3E574D06777193F152BDBE6A6`, and reverified before every cache use. Prepared rootfs snapshots are keyed by the verified archive digest and checksummed before extraction. Package-source fingerprints declared by each PKGBUILD are imported exactly and normal `makepkg` source-signature validation remains enabled.
+
+GitHub Actions gives every build run and retry a separate work directory under `runner.temp`, preventing an interrupted build from contributing stale output to a later artifact. Both privileged workflows restrict manual dispatches to `malik-na`; the install workflow additionally retains its trusted scheduled run. Run the package builder locally on the ARM64 runner with:
+
+```bash
+sudo ./test/vm/build-aarch64-hyprland
 ```

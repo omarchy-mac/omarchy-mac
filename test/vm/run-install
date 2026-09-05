@@ -13,11 +13,13 @@ set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 CACHE="${OMARCHY_INSTALL_VM_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-install-vm}"
 WORK="${OMARCHY_INSTALL_VM_WORK:-/var/tmp/omarchy-install-vm}"
-TARBALL_URL="${OMARCHY_INSTALL_VM_TARBALL:-http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz}"
+TARBALL_URL="${OMARCHY_INSTALL_VM_TARBALL:-https://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz}"
 GUEST_USER=ci
 KEEP_ROOT=${OMARCHY_INSTALL_VM_KEEP:-0}
 CHECK_IDEMPOTENCY=${OMARCHY_INSTALL_VM_IDEMPOTENCY:-0}
-PREPARED_CACHE_VERSION=2
+PREPARED_CACHE_VERSION=3
+ROOTFS_SIGNING_FINGERPRINT=68B3537F39A313B3E574D06777193F152BDBE6A6
+ROOTFS_KEYSERVER=hkps://keyserver.ubuntu.com
 CALLER_UID=${SUDO_UID:-$(id -u)}
 CALLER_GID=${SUDO_GID:-$(id -g)}
 
@@ -45,6 +47,8 @@ cleanup() {
 [[ $(uname -m) == "aarch64" ]] || fail "this harness only runs on aarch64"
 command -v systemd-nspawn >/dev/null || fail "systemd-nspawn is required"
 command -v curl >/dev/null || fail "curl is required"
+command -v gpg >/dev/null || fail "gpg is required"
+command -v sha256sum >/dev/null || fail "sha256sum is required"
 
 as_root true || fail "root (or passwordless sudo) is required to spawn the machine"
 
@@ -57,18 +61,69 @@ as_root mkdir -p "$WORK/root"
 trap cleanup EXIT
 
 tarball="$CACHE/ArchLinuxARM-aarch64-latest.tar.gz"
-if [[ ! -f $tarball ]]; then
-  log "downloading Arch Linux ARM rootfs"
-  curl -fL --retry 3 -o "$tarball.partial" "$TARBALL_URL"
-  mv "$tarball.partial" "$tarball"
+signature="$tarball.sig"
+
+verify_rootfs() {
+  local archive="$1" detached_signature="$2" keyring imported_fingerprint status signer_fingerprint result=0
+
+  keyring=$(mktemp -d "$WORK/rootfs-keyring.XXXXXX")
+  chmod 700 "$keyring"
+  if ! gpg --batch --homedir "$keyring" --keyserver "$ROOTFS_KEYSERVER" \
+    --recv-keys "$ROOTFS_SIGNING_FINGERPRINT" >/dev/null 2>&1; then
+    result=1
+  else
+    imported_fingerprint=$(gpg --batch --homedir "$keyring" --with-colons \
+      --fingerprint "$ROOTFS_SIGNING_FINGERPRINT" 2>/dev/null |
+      awk -F: '$1 == "fpr" { print $10; exit }')
+    if [[ $imported_fingerprint != "$ROOTFS_SIGNING_FINGERPRINT" ]]; then
+      result=1
+    elif ! status=$(gpg --batch --homedir "$keyring" --status-fd=1 \
+      --verify "$detached_signature" "$archive" 2>/dev/null); then
+      result=1
+    else
+      signer_fingerprint=$(awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" { print $3; exit }' <<<"$status")
+      [[ $signer_fingerprint == "$ROOTFS_SIGNING_FINGERPRINT" ]] || result=1
+    fi
+  fi
+  rm -rf "$keyring"
+  (( result == 0 ))
+}
+
+if [[ -f $tarball && -f $signature ]]; then
+  log "re-verifying cached Arch Linux ARM rootfs"
+  if ! verify_rootfs "$tarball" "$signature"; then
+    log "discarding an unverified rootfs cache"
+    rm -f "$tarball" "$signature"
+  fi
+elif [[ -f $tarball || -f $signature ]]; then
+  rm -f "$tarball" "$signature"
 fi
 
-prepared="$CACHE/prepared-aarch64-v${PREPARED_CACHE_VERSION}.tar.gz"
+if [[ ! -f $tarball ]]; then
+  log "downloading and verifying Arch Linux ARM rootfs"
+  download_dir=$(mktemp -d "$WORK/rootfs-download.XXXXXX")
+  curl -fL --retry 3 -o "$download_dir/rootfs.tar.gz" "$TARBALL_URL"
+  curl -fL --retry 3 -o "$download_dir/rootfs.tar.gz.sig" "$TARBALL_URL.sig"
+  if ! verify_rootfs "$download_dir/rootfs.tar.gz" "$download_dir/rootfs.tar.gz.sig"; then
+    rm -rf "$download_dir"
+    fail "Arch Linux ARM rootfs signature did not match $ROOTFS_SIGNING_FINGERPRINT"
+  fi
+  mv "$download_dir/rootfs.tar.gz" "$tarball"
+  mv "$download_dir/rootfs.tar.gz.sig" "$signature"
+  rmdir "$download_dir"
+fi
 
-if [[ -f $prepared ]]; then
+rootfs_digest=$(sha256sum "$tarball" | awk '{ print $1 }')
+
+prepared="$CACHE/prepared-aarch64-v${PREPARED_CACHE_VERSION}-${rootfs_digest}.tar.gz"
+prepared_checksum="$prepared.sha256"
+
+if [[ -f $prepared && -f $prepared_checksum ]] &&
+  (cd "$CACHE" && sha256sum -c "$(basename "$prepared_checksum")" >/dev/null 2>&1); then
   log "restoring prepared rootfs snapshot"
   as_root tar -xzf "$prepared" -C "$WORK/root"
 else
+  rm -f "$prepared" "$prepared_checksum"
   log "extracting rootfs into $WORK/root"
   as_root tar -xzf "$tarball" -C "$WORK/root"
 fi
@@ -106,8 +161,10 @@ BOOTSTRAP
   prepared_partial="$prepared.partial"
   as_root rm -f "$prepared_partial"
   as_root tar -czf "$prepared_partial" -C "$WORK/root" .
-  as_root chown "$(id -u):$(id -g)" "$prepared_partial"
+  as_root chown "$CALLER_UID:$CALLER_GID" "$prepared_partial"
   mv "$prepared_partial" "$prepared"
+  (cd "$CACHE" && sha256sum "$(basename "$prepared")" >"$(basename "$prepared_checksum")")
+  as_root chown "$CALLER_UID:$CALLER_GID" "$prepared_checksum"
 fi
 
 run_install() {
