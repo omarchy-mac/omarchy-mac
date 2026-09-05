@@ -1,0 +1,38 @@
+name: Validate selective ARM edge
+
+on:
+  push:
+    branches: [install-stack-integration]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-vm
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.repository == 'omarchy-mac/omarchy-mac' && github.actor == 'malik-na' && (github.ref == 'refs/heads/selective-arm64-edge' || github.ref == 'refs/heads/install-stack-integration')
+    runs-on: [self-hosted, linux, ARM64]
+    timeout-minutes: 120
+    env:
+      OMARCHY_INSTALL_VM_WORK: /var/tmp/omarchy-selective-edge-${{ github.run_id }}-${{ github.run_attempt }}
+      OMARCHY_INSTALL_VM_PACKAGE_SOURCES: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate package selection and installation
+        shell: bash
+        run: |
+          sudo --preserve-env=HOME,OMARCHY_INSTALL_VM_WORK,OMARCHY_INSTALL_VM_PACKAGE_SOURCES bash ./test/vm/run-selective-edge
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selective-edge-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.OMARCHY_INSTALL_VM_WORK }}/logs/
+          retention-days: 7
+          if-no-files-found: warn
