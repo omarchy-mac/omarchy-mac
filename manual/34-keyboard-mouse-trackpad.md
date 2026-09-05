@@ -61,6 +61,21 @@ Apple trackpads default to natural scrolling, physical clicks instead of
 tap-to-click, two-finger right-click, and a `0.4` scroll factor. Override any
 of these in `~/.config/hypr/input.lua` using the options shown above.
 
+### Keyboard backlight
+
+On Apple Silicon MacBooks the keyboard backlight behaves the way it does under macOS. The keys light up only when the ambient light sensor says the room is dark, turn off after ten seconds without a key press or trackpad touch, and come back at the first touch. Set the level with the sun keys on the Touch Bar, `Shift + F1` / `Shift + F2`, or `omarchy brightness keyboard up`; whatever you set becomes the preferred level, and setting it to zero keeps the keys off until you raise it again.
+
+The thresholds live in `~/.config/omarchy/keyboard-backlight.conf` (all optional):
+
+```bash
+DARK_LUX=40        # keys come on below this
+BRIGHT_LUX=80      # keys go off above this
+DEFAULT_LEVEL=100  # 0-255, until you set a level yourself
+IDLE_SECONDS=10    # off after this much inactivity
+```
+
+`omarchy brightness keyboard auto status` prints the live lux reading, which is the easiest way to pick thresholds for your room. Machines without an ambient light sensor keep the plain manual backlight.
+
 ### Trackpad gestures
 
 You can also turn on [touchpad gestures](https://wiki.hypr.land/Configuring/Advanced-and-Cool/Gestures/), like swiping with three fingers to change workspaces:

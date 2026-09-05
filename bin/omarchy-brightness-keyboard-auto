@@ -1,0 +1,143 @@
+#!/bin/bash
+
+# omarchy:summary=Drive the keyboard backlight from the ambient light sensor and idle state, like macOS
+# omarchy:args=<probe|tick|idle|active|daemon|status>
+# omarchy:examples=omarchy brightness keyboard auto status | omarchy brightness keyboard auto daemon
+
+# Mirror macOS keyboard backlight behaviour on Apple Silicon MacBooks:
+#   - only light the keys when the room is dark (ambient light sensor)
+#   - turn them off after a short idle, back on at the first key or touch
+#   - a manual brightness change becomes the new preferred level
+#
+# The omarchy.keyboard-backlight shell service calls `tick` every couple of
+# seconds and `idle` / `active` from the compositor's idle notifier. Without the
+# shell, `daemon` runs the ticks in a loop and any idle daemon can call
+# `idle` / `active`.
+
+CONFIG="$HOME/.config/omarchy/keyboard-backlight.conf"
+STATE_DIR="$HOME/.local/state/omarchy/keyboard-backlight"
+LED="${OMARCHY_KEYBOARD_LED:-/sys/class/leds/kbd_backlight}"
+
+find_als() {
+  local dir
+  for dir in /sys/bus/iio/devices/iio:device*/; do
+    if [[ -f $dir/name && $(<"$dir/name") == *als* && -r $dir/in_illuminance_input ]]; then
+      echo "${dir}in_illuminance_input"
+      return
+    fi
+  done
+}
+ALS="${OMARCHY_AMBIENT_LIGHT_SENSOR:-$(find_als)}"
+
+# Defaults; override in $CONFIG.
+DARK_LUX=40        # below this, the room counts as dark -> keys on
+BRIGHT_LUX=80      # above this, the room counts as bright -> keys off (hysteresis)
+DEFAULT_LEVEL=100  # 0-255, used until you set a level with the brightness keys
+IDLE_SECONDS=10    # read by the shell service
+POLL_SECONDS=2
+[[ -f $CONFIG ]] && source "$CONFIG"
+
+supported() { [[ -n $ALS && -r $ALS && -f $LED/brightness ]]; }
+
+if [[ ${1:-} == "probe" ]]; then
+  if supported; then
+    exit 0
+  else
+    echo "no ambient light sensor or keyboard backlight found" >&2
+    exit 1
+  fi
+fi
+supported || exit 0
+
+mkdir -p "$STATE_DIR"
+max=$(<"$LED/max_brightness")
+
+read_state() {
+  preferred=$(cat "$STATE_DIR/preferred" 2>/dev/null || echo "$DEFAULT_LEVEL")
+  last_written=$(cat "$STATE_DIR/last-written" 2>/dev/null || echo -1)
+  dark=$(cat "$STATE_DIR/dark" 2>/dev/null || echo 1)
+  idle=$(cat "$STATE_DIR/idle" 2>/dev/null || echo 0)
+}
+
+write_level() {
+  local level=$1
+  (( level < 0 )) && level=0
+  (( level > max )) && level=$max
+  if (( $(<"$LED/brightness") != level )); then
+    brightnessctl -q -d "$(basename "$LED")" set "$level"
+  fi
+  echo "$level" >"$STATE_DIR/last-written"
+}
+
+# A brightness that differs from what we last wrote was set by the user
+# (keyboard keys, Touch Bar, omarchy brightness keyboard). Adopt it.
+adopt_manual_change() {
+  local current
+  current=$(<"$LED/brightness")
+  if (( last_written >= 0 && current != last_written )); then
+    echo "$current" >"$STATE_DIR/preferred"
+    preferred=$current
+    echo "$current" >"$STATE_DIR/last-written"
+    last_written=$current
+  fi
+}
+
+apply() {
+  if (( dark && ! idle )); then
+    write_level "$preferred"
+  else
+    write_level 0
+  fi
+}
+
+update_dark() {
+  local lux
+  lux=$(cat "$ALS" 2>/dev/null) || return
+  if (( dark && lux > BRIGHT_LUX )); then
+    dark=0
+  elif (( ! dark && lux < DARK_LUX )); then
+    dark=1
+  fi
+  echo "$dark" >"$STATE_DIR/dark"
+}
+
+tick() {
+  read_state
+  adopt_manual_change
+  update_dark
+  apply
+}
+
+case ${1:-} in
+  tick)
+    tick
+    ;;
+  daemon)
+    while true; do
+      tick
+      sleep "$POLL_SECONDS"
+    done
+    ;;
+  idle)
+    read_state
+    adopt_manual_change
+    echo 1 >"$STATE_DIR/idle"
+    idle=1
+    apply
+    ;;
+  active)
+    read_state
+    echo 0 >"$STATE_DIR/idle"
+    idle=0
+    apply
+    ;;
+  status)
+    read_state
+    echo "lux=$(<"$ALS") dark=$dark idle=$idle preferred=$preferred brightness=$(<"$LED/brightness")/$max idle_seconds=$IDLE_SECONDS"
+    echo "thresholds: dark<$DARK_LUX bright>$BRIGHT_LUX (edit $CONFIG)"
+    ;;
+  *)
+    echo "Usage: omarchy-brightness-keyboard-auto <probe|tick|idle|active|daemon|status>" >&2
+    exit 1
+    ;;
+esac

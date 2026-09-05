@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "omarchy.keyboard-backlight",
+  "name": "Keyboard Backlight",
+  "version": "1.0.0",
+  "author": "Omarchy",
+  "description": "macOS-style keyboard backlight: on only in a dark room, off after a short idle.",
+  "kinds": [
+    "service"
+  ],
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}
