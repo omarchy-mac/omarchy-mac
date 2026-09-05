@@ -41,7 +41,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./test/vm/run-install
+          sudo --preserve-env=HOME,OMARCHY_INSTALL_VM_WORK,OMARCHY_INSTALL_VM_OFFICIAL_EDGE ./test/vm/run-install
 
       - name: Upload logs
         if: always()
