@@ -335,8 +335,8 @@ Item {
   property bool appleSiliconHost: false
   Process {
     running: true
-    command: ["bash", "-c", "(\"$OMARCHY_PATH/bin/omarchy-hw-apple-silicon\" || omarchy-hw-apple-silicon) && echo yes || echo no"]
-    stdout: SplitParser { onRead: function(line) { root.appleSiliconHost = String(line).trim() === "yes" } }
+    command: [Quickshell.env("OMARCHY_PATH") + "/bin/omarchy-hw-apple-silicon"]
+    onExited: function(exitCode) { root.appleSiliconHost = exitCode === 0 }
   }
 
   function normalizePosition(value) {

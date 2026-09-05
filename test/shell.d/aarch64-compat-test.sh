@@ -64,6 +64,11 @@ grep -qF 'omarchy-hw-aarch64' "$ROOT/bin/omarchy-refresh-pacman" ||
   fail "omarchy-refresh-pacman selects the pacman tree by architecture"
 pass "omarchy-refresh-pacman selects the pacman tree by architecture"
 
+grep -qF 'pkgs.omarchy.org/$candidate/' "$ROOT/bin/omarchy-refresh-pacman-mirrorlist" &&
+  grep -qF 'mirrorlist-$channel' "$ROOT/bin/omarchy-refresh-pacman-mirrorlist" ||
+  fail "the x86 mirrorlist refresh follows the installed package channel"
+pass "the x86 mirrorlist refresh follows the installed package channel"
+
 # Paths must derive from OMARCHY_PATH (AGENTS.md); a hardcoded HOME breaks once
 # the checkout is wired to /usr/share/omarchy.
 if grep -qF '$HOME/.local/share/omarchy' "$ROOT/bin/omarchy-refresh-pacman-mirrorlist"; then
@@ -75,10 +80,14 @@ pass "the mirrorlist refresh derives its source from OMARCHY_PATH"
 # must refuse to run on Apple Silicon (the inverse of the guard in
 # omarchy-upgrade-to-quattro-mac). It is not safe to execute here — it writes
 # /etc through sudo — so assert the guard statically instead.
-grep -qE 'omarchy-hw-aarch64|uname -m' "$ROOT/bin/omarchy-upgrade-to-quattro" &&
-  grep -qF 'aarch64' "$ROOT/bin/omarchy-upgrade-to-quattro" ||
+grep -qF '[[ $(omarchy-hw-arch) == "x86_64" ]]' "$ROOT/bin/omarchy-upgrade-to-quattro" ||
   fail "the upstream x86 upgrade fences itself off on Apple Silicon"
 pass "the upstream x86 upgrade fences itself off on Apple Silicon"
+
+negated_arch_calls=$(rg -n '! omarchy-hw-aarch64' "$ROOT/bin" "$ROOT/install" || true)
+[[ -z $negated_arch_calls ]] ||
+  fail "architecture gates never turn a missing detector into x86 success" "$negated_arch_calls"
+pass "all architecture gates fail closed when detection is unavailable"
 
 # --- Simulated aarch64 environment ------------------------------------------
 
@@ -176,4 +185,3 @@ pass "x86 pkg-add fails on missing packages, matching upstream"
 grep -qF 'EUID == 0' "$ROOT/bin/omarchy-pkg-add" ||
   fail "omarchy-pkg-add keeps the upstream root path that calls pacman without sudo"
 pass "omarchy-pkg-add keeps the upstream EUID pacman path"
-

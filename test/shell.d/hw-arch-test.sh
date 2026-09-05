@@ -10,7 +10,7 @@ trap 'rm -rf "$tmp_dir"' EXIT
 hw() {
   local name="$1"
   shift
-  "$ROOT/bin/omarchy-hw-$name" "$@"
+  PATH="$ROOT/bin:$PATH" "$ROOT/bin/omarchy-hw-$name" "$@"
 }
 
 # x86_64: architecture printer and both booleans.

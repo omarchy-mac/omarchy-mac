@@ -3,7 +3,7 @@
 # This script automatically configures ARM mirrors if on ARM architecture
 
 # Only run on ARM64 systems
-if ! omarchy-hw-aarch64; then
+if [[ $(omarchy-hw-arch) != "aarch64" ]]; then
   if [[ "${OMARCHY_DEBUG:-}" == "1" ]]; then
     echo "[DEBUG] Not an ARM64 system (detected: $(omarchy-hw-arch)), skipping ARM mirror setup"
   fi

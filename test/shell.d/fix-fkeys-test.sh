@@ -48,9 +48,9 @@ run_leaf x86_64 'apple,j413' 0
 pass "x86 without a loaded hid_apple module is left alone"
 
 run_leaf x86_64 'not-apple' 1
-[[ -f $conf ]] || fail "x86 with hid_apple loaded (T2) gets fnmode=1"
-grep -qF 'fnmode=1' "$conf" || fail "T2 fnmode write is fnmode=1" "$(cat "$conf")"
-pass "x86 with hid_apple loaded (T2) gets fnmode=1"
+[[ -f $conf ]] || fail "x86 with hid_apple loaded gets fnmode=2"
+grep -qF 'fnmode=2' "$conf" || fail "x86 fnmode write is fnmode=2" "$(cat "$conf")"
+pass "x86 with hid_apple loaded gets upstream fnmode=2"
 
 run_leaf aarch64 'apple,j413' 0
 [[ -f $conf ]] || fail "Apple Silicon gets fnmode=1 even before hid_apple loads"
@@ -59,3 +59,7 @@ pass "Apple Silicon gets fnmode=1 even before hid_apple loads"
 run_leaf aarch64 'raspberrypi,4-model-b' 0
 [[ ! -f $conf ]] || fail "non-Apple aarch64 is left alone" "$(cat "$conf")"
 pass "non-Apple aarch64 is left alone"
+
+run_leaf aarch64 'raspberrypi,4-model-b' 1
+[[ ! -f $conf ]] || fail "non-Apple aarch64 with hid_apple loaded is left alone" "$(cat "$conf")"
+pass "non-Apple aarch64 does not take the x86 fnmode setting"

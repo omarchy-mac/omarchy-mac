@@ -20,9 +20,6 @@ esac
 # Asahi MacBooks often expose neither an ACPI lid nor DMI chassis_type.
 # Only fall back when DMI said nothing — an explicit desktop chassis (Mac
 # Studio, Mini, or a test stub) must not be overridden by Apple Silicon.
-# Invoke the sibling by path so this works when tests call us with a full path.
-[[ -z $chassis_type ]] &&
-  "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/omarchy-hw-apple-silicon" &&
-  exit 0
+[[ -z $chassis_type ]] && omarchy-hw-apple-silicon && exit 0
 
 exit 1
