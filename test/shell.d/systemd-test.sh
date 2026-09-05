@@ -41,6 +41,8 @@ pass "ALS keyboard backlight service follows the graphical session"
 
 grep -F 'omarchy-brightness-keyboard-auto.service' "$first_run_units" >/dev/null ||
   fail "first-run does not enable ambient keyboard backlight"
+grep -e 'cp .*omarchy-brightness-keyboard-auto.service' "$first_run_units" >/dev/null &&
+  fail "first-run copies the ALS keyboard unit into ~/.config/systemd/user"
 pass "first-run enables ambient keyboard backlight"
 
 upgrade_to_quattro="$ROOT/bin/omarchy-upgrade-to-quattro"

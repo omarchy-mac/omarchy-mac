@@ -11,15 +11,6 @@
 
 set -euo pipefail
 
-# The ALS keyboard-backlight unit lives in the Omarchy tree. Copy it into the
-# user systemd dir so enable works before omarchy-settings ships it under
-# /usr/lib/systemd/user/.
-als_kbd_unit="${OMARCHY_PATH:-/usr/share/omarchy}/default/systemd/user/omarchy-brightness-keyboard-auto.service"
-if [[ -f $als_kbd_unit ]]; then
-  mkdir -p "$HOME/.config/systemd/user"
-  cp "$als_kbd_unit" "$HOME/.config/systemd/user/omarchy-brightness-keyboard-auto.service"
-fi
-
 systemctl --user daemon-reload
 systemctl --user enable --now \
   bt-agent.service \
