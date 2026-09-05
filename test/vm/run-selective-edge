@@ -250,6 +250,7 @@ if [[ $CHECK_PACKAGE_SOURCES == "1" ]]; then
   nspawn /bin/bash -euo pipefail <<'VERIFY_FINAL' 2>&1 | tee "$WORK/logs/final-package-sources.log"
 export LC_ALL=C
 source /src/omarchy/install/helpers/arm-package-sources.sh
+[[ $(pacman-conf --repo omarchy Usage) == "Sync" ]]
 while read -r target; do
   package=${target#*/}
   expected=$(pacman -Si "$target" | sed -n 's/^Version[[:space:]]*:[[:space:]]*//p')
@@ -274,8 +275,10 @@ pacman -Q omarchy-settings >/dev/null
 [[ -d /usr/share/omarchy/install ]]
 [[ -x /usr/share/omarchy/bin/omarchy ]]
 grep -q '^\[omarchy-aarch64\]' /etc/pacman.conf
+grep -q '^=== Omarchy Setup Completed:' /var/log/omarchy-install.log
 id ci >/dev/null
-su ci -c 'source /usr/share/omarchy/default/bash/env-bootstrap; command -v omarchy >/dev/null; [[ -d $HOME/.config/hypr ]]'
+su ci -c 'set -e; source /usr/share/omarchy/default/bash/env-bootstrap; command -v omarchy >/dev/null; [[ -d $HOME/.config/hypr ]]; omarchy-done check finalize-user'
+printf 'ok - system setup completed and user finalization marker exists\n'
 printf 'ok - install.sh produced a working Omarchy userspace\n'
 ASSERT
 
