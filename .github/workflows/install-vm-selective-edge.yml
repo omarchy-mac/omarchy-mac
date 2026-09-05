@@ -2,7 +2,7 @@ name: Validate selective ARM edge
 
 on:
   push:
-    branches: [selective-arm64-edge]
+    branches: [install-stack-integration]
   workflow_dispatch:
 
 permissions:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   validate:
-    if: github.repository == 'omarchy-mac/omarchy-mac' && github.actor == 'malik-na' && github.ref == 'refs/heads/selective-arm64-edge'
+    if: github.repository == 'omarchy-mac/omarchy-mac' && github.actor == 'malik-na' && (github.ref == 'refs/heads/selective-arm64-edge' || github.ref == 'refs/heads/install-stack-integration')
     runs-on: [self-hosted, linux, ARM64]
     timeout-minutes: 120
     env:
