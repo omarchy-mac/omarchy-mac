@@ -91,7 +91,7 @@ run_leaf() {
       -e "s|/etc/modprobe.d|$test_tmp/etc/modprobe.d|g" \
       "$leaf" >"$script"
 
-  WIFI_ID="$wifi_id" T2_HARDWARE="$t2" ARCH="$arch" PATH="$stub_bin:$PATH" \
+  WIFI_ID="$wifi_id" T2_HARDWARE="$t2" ARCH="$arch" PATH="$stub_bin:$ROOT/bin:$PATH" \
     bash -eE -o pipefail -c 'source "$1"' bash "$script" </dev/null
 }
 
@@ -148,7 +148,7 @@ run_migration() {
   printf '%s' "$vendor" >"$test_tmp/dmi/sys_vendor"
   : >"$calls"
 
-  WIFI_ID="$wifi_id" T2_HARDWARE="$t2" ARCH="$arch" PATH="$stub_bin:$PATH" TEST_LOG="$calls" \
+  WIFI_ID="$wifi_id" T2_HARDWARE="$t2" ARCH="$arch" PATH="$stub_bin:$ROOT/bin:$PATH" TEST_LOG="$calls" \
     OMARCHY_BRCMFMAC_DMI_VENDOR="$test_tmp/dmi/sys_vendor" \
     OMARCHY_BRCMFMAC_CONF="$conf" \
     bash -euo pipefail "$migration" >/dev/null
