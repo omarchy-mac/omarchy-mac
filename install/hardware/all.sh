@@ -42,6 +42,7 @@ run_logged "$OMARCHY_INSTALL/hardware/apple/fix-brcmfmac-supplicant.sh"
 run_logged "$OMARCHY_INSTALL/hardware/apple/fix-asahi-hid-race.sh"
 run_logged "$OMARCHY_INSTALL/hardware/apple/enable-notch.sh"
 run_logged "$OMARCHY_INSTALL/hardware/apple/audio.sh"
+run_logged "$OMARCHY_INSTALL/hardware/apple/m3.sh"
 
 run_logged "$OMARCHY_INSTALL/hardware/lenovo/fix-yoga-pro7-bass-speakers.sh"
 
