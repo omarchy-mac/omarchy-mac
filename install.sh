@@ -131,7 +131,7 @@ ensure_asahi_alarm_keyring() {
 
   if ! sudo pacman-key --list-keys "$asahi_alarm_key" >/dev/null 2>&1; then
     log "Importing the Asahi Alarm package signing key"
-    sudo pacman-key --recv-keys "$asahi_alarm_key" --keyserver hkps://keys.openpgp.org
+    sudo pacman-key --recv-keys "$asahi_alarm_key" --keyserver hkps://keyserver.ubuntu.com
   fi
   sudo pacman-key --lsign-key "$asahi_alarm_key" >/dev/null
 
