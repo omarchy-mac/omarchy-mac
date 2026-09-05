@@ -125,8 +125,15 @@ grep -qF 'pacman-key --lsign-key "$asahi_alarm_key"' "$install_script" ||
 grep -qF 'pacman -Sy --needed --noconfirm asahi-alarm-keyring' "$install_script" ||
   fail "the installer installs the Asahi Alarm package keyring"
 keyring_call=$(grep -n '^  ensure_asahi_alarm_keyring$' "$install_script" | cut -d: -f1)
-refresh_call=$(grep -n '^  sudo pacman -Sy --noconfirm$' "$install_script" | cut -d: -f1)
+refresh_call=$(grep -nF '  sudo env OMARCHY_UPDATE_PACMAN=1 pacman -Syu --needed --noconfirm "${targets[@]}"' "$install_script" | cut -d: -f1)
 [[ -n $keyring_call && -n $refresh_call ]] || fail "the installer bootstraps the Asahi keyring before refresh"
 (( keyring_call < refresh_call )) ||
   fail "the Asahi keyring is installed before the package database refresh"
 pass "the installer bootstraps Asahi signing keys before refreshing ARM packages"
+
+repo_call=$(grep -n '^  ensure_arm_package_repo$' "$install_script" | cut -d: -f1)
+build_call=$(grep -n '^  build_omarchy_packages$' "$install_script" | cut -d: -f1)
+[[ -n $repo_call && -n $build_call ]] || fail "the installer prepares repositories before package builds"
+(( repo_call < build_call && repo_call < gum_call )) || fail "the compatible stack transaction precedes package operations"
+grep -qF 'source "$checkout/install/helpers/arm-package-sources.sh"' "$install_script" || fail "the installer uses shared source policy"
+pass "the installer prepares the compatible stack before package operations"

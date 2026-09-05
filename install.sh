@@ -11,6 +11,7 @@ set -euo pipefail
 readonly checkout="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly package_output="$checkout/build-output"
 readonly asahi_alarm_key="12CE6799A94A3F1B5DDFFE88F576553597FB8FEB"
+source "$checkout/install/helpers/arm-package-sources.sh"
 
 # gum is how the rest of Omarchy talks to people, but it arrives with the
 # omarchy package well into this script, so every helper falls back to plain
@@ -155,8 +156,11 @@ ensure_arm_package_repo() {
   fi
 
   ensure_asahi_alarm_keyring
-  log "Refreshing package databases for ARM packages"
-  sudo pacman -Sy --noconfirm
+  omarchy_arm_prepare_package_sources
+  local -a targets
+  mapfile -t targets < <(omarchy_arm_package_targets)
+  log "Upgrading system packages and installing the compatible Hyprland stack"
+  sudo env OMARCHY_UPDATE_PACMAN=1 pacman -Syu --needed --noconfirm "${targets[@]}"
 }
 
 load_unavailable_packages() {
@@ -220,6 +224,12 @@ install_default_package_set() {
 
   log "Installing the default package set (AUR builds take a while)"
   while read -r package; do
+    # Already installed in the full compatibility transaction. An unqualified
+    # yay target would select the regular repository and can downgrade it.
+    if omarchy_arm_package_is_selected "$package"; then
+      pacman -Q "$package" >/dev/null || fail "Compatible package missing after system upgrade: $package"
+      continue
+    fi
     # These compile a dependency chain for hours before failing an architecture
     # check, so do not start them unless asked to.
     if (( ! attempt_unavailable )) && package_is_unavailable_here "$package"; then
@@ -282,12 +292,12 @@ snapshot_factory_baseline() {
 main() {
   check_preconditions
   ensure_utf8_locale
+  ensure_arm_package_repo
   ensure_gum
   ensure_aur_helper
   ensure_package_sources
   build_omarchy_packages
   install_omarchy_packages
-  ensure_arm_package_repo
   install_default_package_set
   seed_user_defaults
   run_system_setup
