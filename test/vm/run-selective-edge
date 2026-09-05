@@ -1,10 +1,9 @@
 #!/bin/bash
 # Run install.sh inside an isolated Arch Linux ARM machine on this aarch64 host.
 #
-# GitHub's hosted ARM runners have no nested KVM, and this Asahi host uses 16k
-# pages, so a stock 4k Arch ARM QEMU guest cannot use KVM. systemd-nspawn shares
-# the host kernel (the same 16k kernel a real Mac install runs on) and still
-# gives install.sh its own rootfs, users, and pacman.
+# systemd-nspawn shares the ARM64 host kernel while giving install.sh its own
+# rootfs, users, and pacman. AWS runs a generic Linux kernel; this tests package
+# installation and userspace setup, not Asahi kernel or Apple GPU behavior.
 #
 # Needs root (or passwordless sudo), network, and several GB free.
 
@@ -152,6 +151,14 @@ nspawn() {
     "$@"
 }
 
+set_test_mirror() {
+  # Avoid the rotating HTTP mirror that timed out during package downloads.
+  # This is a guest-only fixture, not a change to users' mirror preferences.
+  nspawn /bin/bash -euo pipefail -c 'printf "%s\n" "Server = https://fl.us.mirror.archlinuxarm.org/\$arch/\$repo" > /etc/pacman.d/mirrorlist'
+}
+
+set_test_mirror
+
 if [[ ! -f $prepared ]]; then
   log "bootstrapping pacman, sudo, and the $GUEST_USER user"
   nspawn /bin/bash -euo pipefail <<'BOOTSTRAP'
@@ -178,7 +185,7 @@ BOOTSTRAP
 fi
 
 if [[ $CHECK_PACKAGE_SOURCES == "1" ]]; then
-  log "validating restricted package sources and the existing-system upgrade"
+  log "validating restricted package sources and current-stack repository remediation"
   nspawn /bin/bash -euo pipefail <<'PACKAGE_SOURCES' 2>&1 | tee "$WORK/logs/package-sources.log"
 export OMARCHY_PATH=/src/omarchy
 export PATH="$OMARCHY_PATH/bin:$PATH"
@@ -209,8 +216,19 @@ omarchy-update-system-pkgs
 [[ $(pacman-conf --repo omarchy Usage) == "Sync" ]]
 pacman -Qii aquamarine hyprtoolkit hyprland-guiutils hyprland
 pacman -Dk
-printf 'PASS: existing-system repository remediation and upgrade\n'
+printf 'PASS: current-stack repository remediation and reinstall (not an old-stack upgrade fixture)\n'
 PACKAGE_SOURCES
+
+  # The package transaction above must not preinstall the stack for install.sh.
+  # Start the full installer independently from the clean prepared base image.
+  as_root cp "$WORK/root/var/log/pacman.log" "$WORK/logs/package-phase-pacman.log"
+  [[ $WORK == /var/tmp/omarchy-* && $WORK != *".."* && ! -L $WORK/root ]] || fail "unsafe work directory"
+  as_root rm -rf -- "$WORK/root"
+  as_root mkdir -p "$WORK/root"
+  as_root tar -xzf "$prepared" -C "$WORK/root"
+  as_root mkdir -p "$WORK/root/src/omarchy"
+  set_test_mirror
+  log "restored independent clean base for the full installation"
 fi
 
 run_install() {
